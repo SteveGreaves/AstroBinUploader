@@ -39,7 +39,7 @@ def create_calibration_df(df):
     Returns:
     pandas.DataFrame: A DataFrame with columns 'TYPE', 'GAIN', and 'NUMBER'.
     """
-    relevant_types = ['DARK', 'BIAS', 'FLAT']
+    relevant_types = ['DARK', 'BIAS', 'FLAT','FLATDARKS']
     filtered_df = df[df['IMAGETYP'].isin(relevant_types)]
     group_counts = filtered_df.groupby(['IMAGETYP', 'GAIN']).size().reset_index(name='NUMBER')
     return group_counts.rename(columns={'IMAGETYP': 'TYPE'})
@@ -84,7 +84,7 @@ def create_lights_df(df, calibration_df, filters_df, bortle, mean_sqm, mean_fwhm
     aggregated['darks'] = aggregated.apply(get_calibration_data, cal_type='DARK', axis=1)
     aggregated['flats'] = aggregated.apply(get_calibration_data, cal_type='FLAT', axis=1)
     aggregated['bias'] = aggregated.apply(get_calibration_data, cal_type='BIAS', axis=1)
-
+    aggregated['flatDarks'] = aggregated.apply(get_calibration_data, cal_type='FLATDARKS', axis=1)
     aggregated['sensorCooling'] = aggregated['sensorCooling'].round(1)
     aggregated['temperature'] = aggregated['temperature'].round(1)
 
