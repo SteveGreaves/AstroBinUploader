@@ -3,9 +3,7 @@
 I really dislike adding session capture information to my AstroBin uploads. When you have many sessions it is quite tedious collecting, analysing and the entering the data.
 For some of my longer imaging session I took to adding the data to the description section, which is not the best way. To resolve this issue I created a simple python script.
 
-This script processes FITS (Flexible Image Transport System) files for astro-imaging. It extracts header data from FITS files, organizes the data into a structured format, and exports it to a CSV file. This tool creates summary of acquisition session information that is suitable for using with AstroBin.
-
-The FIT files can be stored is a structured way in a tolaly unstructured directory. The script collects all the FIT files in specified directory and analises the header files.
+This script processes FITS (Flexible Image Transport System) files for astro-imaging. It extracts header data from FITS files, organizes the data into a structured format, and exports it to a CSV file. The script creates summary of acquisition session information that is suitable for using with AstroBin.
 
 ## Features
 
