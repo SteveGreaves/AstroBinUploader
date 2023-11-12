@@ -1,14 +1,22 @@
 # Astroimage Processing Script
 
-This script processes FITS (Flexible Image Transport System) files for astro-imaging. It extracts header data from FITS files, organizes the data into a structured format, and exports it to a CSV file. This tool creates summary of acquisition session information that is suitable for using with AstroBin..
+I really dislike adding session capture information to my AstroBin uploads. When you have many sessions it is quite tedious collecting, analysing and the entering the data.
+For some of my longer imaging session I took to adding the data to the description section, which is not the best way. To resolve this issue I created a simple python script.
+
+This script processes FITS (Flexible Image Transport System) files for astro-imaging. It extracts header data from FITS files, organizes the data into a structured format, and exports it to a CSV file. This tool creates summary of acquisition session information that is suitable for using with AstroBin.
+
+The FIT files can be stored is a structured way in a tolaly unstructured directory. The script collects all the FIT files in specified directory and analises the header files.
 
 ## Features
 
 - Extracts headers from all FITS files in a specified directory and its subdirectories.
 - Categorizes images into different types (e.g., LIGHT, DARK, BIAS, FLAT, FLATDARK).
-- Generates a calibration DataFrame based on specific image types and gains.
-- Creates a lights DataFrame with detailed information, replacing filter names with codes.
-- Exports the processed data into a CSV file sutible for pasting into to Astrobin's aqusition data input dialogue when using the import from CSV option.
+- Generates  a dataFrame that contains information from calibration frames based on specific image types and gains.
+- Creates a DataFrame with detailed Lights information, replacing filter names with codes.
+- Uses this information to create a CSV file that meets AstroBin's data aqusition format. 
+- Exports the processed data into a CSV file. The contents are sutible for pasting into to Astrobin's aqusition data input dialogue when using the import from CSV option.
+
+-The python script is OS agnostic, so you will be able to run this on Windows, Linux or MACOS as long as you ensure the installation pre-requsites are met.
 
 ## Prerequisites
 
@@ -30,6 +38,28 @@ To use the AstroImage Processing Script, follow these steps:
 5. Follow the prompts to input the necessary data (directory path, filter file name, etc.).
 6. The script will process the FITS files and export the data to a CSV file.
 
+## Filter.csv
+Astrobin requires the user provide a 4 digit code that represents the filter being used. The code can be obtained from the url in the equipment section for the filter being used.
+For instance for an Astronomik H-alpha CCD 6nm 2 inch filter the equipment explorer url is:
+
+https://app.astrobin.com/equipment/explorer/filter/4663/astronomik-h-alpha-ccd-6nm-2 
+
+The code in this case is 4663.
+
+The filter.csv file contains the filter name and the corresponding code. The filter.csv contents for my filters is given below:
+
+|Filter|Code|
+|------|----|
+|Ha    |4663|
+|SII   |4844|
+|OIII  |4752|
+|Red   |4649|
+|Green |4643|
+|Blue  |4637|
+|Lum   |2906|
+|CLS   |4061|
+
+It's a pain to collect these but once you have them you are set. Ensure the filter.csv file is in teh same directory as the python scipt and the folder containing your astoimages.
 ## Contributing to AstroImage Processing Script
 
 To contribute to this project, follow these steps:
