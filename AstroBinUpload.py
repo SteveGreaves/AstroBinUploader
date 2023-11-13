@@ -59,38 +59,60 @@ def create_lights_df(df, calibration_df, filters_df, bortle, mean_sqm, mean_fwhm
     Returns:
     pandas.DataFrame: A DataFrame with specified columns for 'LIGHT' type data.
     """
+    # Create a dataframe woth only light image header data extracted from the main data frame
     light_df = df[df['IMAGETYP'] == 'LIGHT'].copy()
+    # Extract the date from the date-time information
     light_df['date'] = pd.to_datetime(light_df['DATE-LOC']).dt.date
+    #group on gain
     light_df['gain'] = light_df['GAIN'].astype(calibration_df['GAIN'].dtype)
+    #rename XBINNING column
+    light_df.rename(columns={'XBINNING': 'binning'}, inplace=True)
+    
+    #Replace the filter names with Astrobin filter codes 
+    #Merge light_df with filters_df by matching the 'FILTER' column in light_df to the 'Filter' column in filters_df
+    #This combinines data from both DataFrames based on filter names.
+    light_df = light_df.merge(filters_df, left_on='FILTER', right_on='filter')
 
-    light_df = light_df.merge(filters_df, left_on='FILTER', right_on='Filter')
-    aggregated = light_df.groupby(['date', 'Code', 'gain', 'XBINNING']).agg(
+    #Group light_df by 'date', 'Filter code ', 'gain', and 'XBINNING'.git/
+    #then calculate the sum of all frames in the group defined on the specfic 'DATE-LOC',
+    #the mean of 'EXPOSURE', 'CCD-TEMP', and 'FOCTEMP',
+
+    aggregated = light_df.groupby(['date', 'code', 'gain', 'binning']).agg(
         number=('DATE-LOC', 'count'),
         duration=('EXPOSURE', 'mean'),
         sensorCooling=('CCD-TEMP', 'mean'),
         temperature=('FOCTEMP', 'mean')
     ).reset_index()
-
+    #aggregate all other parameters for the aggregated dataframe
     aggregated['sensorCooling'] = aggregated['sensorCooling'].round().astype(int)
     aggregated['flatDarks'] = 0
     aggregated['bortle'] = bortle
     aggregated['meanSqm'] = mean_sqm
     aggregated['meanFWHm'] = mean_fwhm
+ 
 
+    #define function that collects all calibration frame information
     def get_calibration_data(row, cal_type):
         match = calibration_df[(calibration_df['TYPE'] == cal_type) & (calibration_df['GAIN'] == row['gain'])]
         return match['NUMBER'].sum() if not match.empty else 0
 
+    #add these to the aggregated data frame 
     aggregated['darks'] = aggregated.apply(get_calibration_data, cal_type='DARK', axis=1)
     aggregated['flats'] = aggregated.apply(get_calibration_data, cal_type='FLAT', axis=1)
     aggregated['bias'] = aggregated.apply(get_calibration_data, cal_type='BIAS', axis=1)
     aggregated['flatDarks'] = aggregated.apply(get_calibration_data, cal_type='FLATDARKS', axis=1)
     aggregated['sensorCooling'] = aggregated['sensorCooling'].round(1)
     aggregated['temperature'] = aggregated['temperature'].round(1)
+    #rename Code column
+    aggregated.rename(columns={'code': 'filter'}, inplace=True)
 
+
+    #adjust the column order to match that required by AstoBin
     column_order = ['date', 'filter', 'number', 'duration', 'binning', 'gain', 
                     'sensorCooling', 'darks', 'flats', 'flatDarks', 'bias', 
                     'meanSqm', 'meanFWHm', 'temperature']
+    #aggregated = aggregated.reindex(columns=column_order)
+
     return aggregated.reindex(columns=column_order)
 
 def process_fits_data(directory, filter_file, bortle, mean_sqm, mean_fwhm):
