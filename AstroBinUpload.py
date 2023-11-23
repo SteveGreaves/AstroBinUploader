@@ -16,7 +16,8 @@ warnings.filterwarnings('ignore')
 
 def extract_fits_headers(directories):
     """
-    Extract headers from FITS files in given directories and summarize the observation session.
+    Extract headers from FITS files in given directories.
+    Exits if any required fields are missing in a FITS file's header.
 
     Parameters:
     directories (list): List of directory paths to search for FITS files.
@@ -25,24 +26,30 @@ def extract_fits_headers(directories):
     DataFrame: Pandas DataFrame containing the headers from the FITS files.
     """
     headers = []
+    required_fields = ["EXPOSURE", "DATE-LOC", "XBINNING", "GAIN", "XPIXSZ", "CCD-TEMP", 
+                       "FOCALLEN", "SITELAT", "SITELONG", "FILTER", "OBJECT", "FOCTEMP"]
 
     # Extract headers from FITS files
     for directory in directories:
         for root, _, files in os.walk(directory):
-            print('Extracting headers from ', root if root == directory else os.path.basename(root))
             for file in files:
                 if file.lower().endswith('.fits'):
                     file_path = os.path.join(root, file)
                     try:
-                        with fits.open(file_path, mode='update') as hdul:
+                        with fits.open(file_path) as hdul:
                             header = hdul[0].header
+                            
+                            # Check if all required fields are present
+                            if not all(field in header for field in required_fields):
+                                print("This code only works with N.I.N.A generated FITS files.")
+                                sys.exit(1)
+
                             headers.append(dict(header, file_path=file_path))
                     except (OSError, IOError) as e:
                         print(f"Error reading {file_path}: {e}")
 
-    print('Header extraction complete')
-    
     return pd.DataFrame(headers)
+
 
 
 def format_seconds_to_hms(seconds):
