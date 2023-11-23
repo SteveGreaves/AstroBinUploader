@@ -439,7 +439,6 @@ def main():
     except ValueError:
         hfr_set = 0
         directory_paths = sys.argv[1:]
-    print(hfr_set)
 
     # Validate directory paths
     for directory in directory_paths:
