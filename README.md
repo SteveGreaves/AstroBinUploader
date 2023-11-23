@@ -51,9 +51,7 @@ Ensure these files are present in the same directory as the script.
 
         `python3 AstroBinUploadCSV.py directory_path1 directory_path2  directory_pathn hfr_set`.
 
-There can be as many directory paths as required to capture all the image files, but the minimum is one. The image files can be collected in one or more directories.  
-The last argument passed to the function is hfr_set. This represents the hfr value in pixels the user wishes to use for all the images. hfr_set will be used by the code if there is no value for HFR found in the image pathname.
-If hfr_set is empty or not a floating point number FWHM will be equal to zero, if it is a floating point number FWHM will be calculated using this value.  
+There can be as many directory paths as required to capture all the image files, but the minimum is one. The image files can be collected in one or more directories. The last argument passed to the function is hfr_set. This represents the hfr value in pixels the user wishes to use for all the images. hfr_set will be used by the code if there is no value for HFR found in the image pathname. If hfr_set is empty or not a floating point number FWHM will be equal to zero, if it is a floating point number FWHM will be calculated using this value.  
 
 An example program call where HFR is not in the pathname and is passed as an argument when calling the function is given below:
 
