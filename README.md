@@ -45,7 +45,7 @@ The script requires the following external CSV files for its operation:
 - **sites.csv**: Stores latitude, longitude, Bortle scale, and SQM values for known locations.
 - **secret.csv**: Holds API keys and endpoints for external services (e.g., light pollution data).
 
-Ensure these files are present in the same directory as the script.
+Ensure these files are present in the same directory as the script. You can copy those in the repository and modify as required.
 
 ### Run the script from the installation directory as follows 
 
