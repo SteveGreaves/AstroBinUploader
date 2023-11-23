@@ -1,4 +1,4 @@
-# README.md for GitHub Repository
+# README.md for AstroBinUploader.py
 
 ## Features
 
