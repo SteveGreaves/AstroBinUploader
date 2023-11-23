@@ -211,7 +211,7 @@ The header file parameters used in the code are:
 | SITELAT  | latitude of observation site                    | 
 | SITELONG | longitude of observation site                   |
 | FILTER   | filter used                                     |
-| OBJECT   | target name                                     |
+| OBJECT   | target name (sequence name in N.I.N.A)          |
 | FOCTEMP  | ambient temperature in degrees centigrade       | 
 
 
