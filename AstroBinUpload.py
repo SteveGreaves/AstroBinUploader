@@ -9,7 +9,7 @@ import warnings
 import re
 import math
 
-# Suppressing warnings for specific use-case, but be aware of potential debugging issues 
+# Suppressing warnings for specific use-case, but be aware of potential debugging issues
 warnings.filterwarnings('ignore')
 
 # Define functions
@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 def extract_fits_headers(directories):
     """
     Extract headers from FITS files in given directories.
-    Exits if any required fields are missing in a FITS file's header.
+    Exits if the IMAGETYP is LIGHT and any required fields are missing in a FITS file's header.
 
     Parameters:
     directories (list): List of directory paths to search for FITS files.
@@ -38,9 +38,9 @@ def extract_fits_headers(directories):
                     try:
                         with fits.open(file_path) as hdul:
                             header = hdul[0].header
-                            
-                            # Check if all required fields are present
-                            if not all(field in header for field in required_fields):
+
+                            # Check for LIGHT IMAGETYP and required fields
+                            if header.get('IMAGETYP') == 'LIGHT' and not all(field in header for field in required_fields):
                                 print("This code only works with N.I.N.A generated FITS files.")
                                 sys.exit(1)
 
