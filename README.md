@@ -314,7 +314,7 @@ secret.csv format
 
 The AstroBin Long Exposure Acquisition Fields has an entry for meanFwhm. This is not directly available from the FITS header file. But N.I.N.A allows for the mean HFR value of an image to be embedded in the image file name. An example of my file naming convention, with HFR embedded, is given below: 
 
-NGC 7822_Panel_1_Date_2023-09-02_Time_21-09-01_Filter_Ha_Exposure_600.00s_HFR_1.64px_FrameNo_0002.fits
+                'NGC 7822_Panel_1_Date_2023-09-02_Time_21-09-01_Filter_Ha_Exposure_600.00s_HFR_1.64px_FrameNo_0002.fits'
 
 The code will look for the key word HFR in the image file name. If found it will extract the HFR value and assign it to a variable hfr. As HFR is in pixels it calculates the image scale from the telescope information held in the FITS header. In particular XPIXSZ: x pixel size in microns and FOCALLEN: telescope focal length in mm
 
