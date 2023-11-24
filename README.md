@@ -323,7 +323,7 @@ The AstroBin Long Exposure Acquisition Fields has an entry for meanFwhm. This is
 
 The code will look for the key word HFR in the image file name. If found it will extract the HFR value and assign it to a variable hfr. As HFR is in pixels it calculates the image scale from the telescope information held in the FITS header. In particular XPIXSZ: x pixel size in microns and FOCALLEN: telescope focal length in mm
 
-imscale = XPIXSZ / FOCALLEN * 206.265
+imscale = XPIXSZ / FOCALLEN * 206.265   
 fwhm = hfr * imscale
 
 The calculations above assume that all stars are circular and so hfr and fwhm are equivalent, it is a reasonable approximation as the code averages hfr across all images taken on a particular date with a given filter and gain and then AstroBin averages hfr across all entries in the uploaded CSV file.
