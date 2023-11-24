@@ -1,0 +1,14 @@
+Key,Value,Description
+EXPOSURE,100,Exposure time in seconds
+DATE-LOC,2023-01-01,Observation date
+XBINNING,1,Camera binning
+GAIN,0,Camera gain
+XPIXSZ,1,Camera pixel size in um
+CCD-TEMP,-10,Camera sensor temperature in degrees C
+FOCALLEN,540,Telescope focal length in mm
+SITELAT,52.25,Observation site latitude in decimal degrees
+SITELONG,-0.12,Observation site longitude in decimal degrees
+FILTER,No Filter,Filter name 
+OBJECT,No target,Target name
+FOCTEMP,20,Ambient temperature in degrees C as measure by the focuser
+HFR,1.6,Half-flux radius in pixels
