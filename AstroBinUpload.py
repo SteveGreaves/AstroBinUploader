@@ -1,4 +1,27 @@
-# First import required libraries
+# coding: utf-8
+
+"""
+acqusition.csv uploader see (https://welcome.astrobin.com/importing-acquisitions-from-csv/)
+
+This implementation is not endorsed nor related with AstroBin development team.
+
+Copyright (C) 2023 Steve Greaves
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
+
+__version__ = "1.0.3"
+ 
 import os
 import sys
 import pandas as pd
@@ -8,48 +31,58 @@ from astropy.io import fits
 import warnings
 import re
 import math
+from datetime import datetime as dt
 
 # Suppressing warnings for specific use-case, but be aware of potential debugging issues
 warnings.filterwarnings('ignore')
 
 # Define functions
 
-def extract_fits_headers(directories):
+def extract_fits_headers(directories, default_values):
     """
-    Extract headers from FITS files in given directories.
-    Exits if the IMAGETYP is LIGHT and any required fields are missing in a FITS file's header.
+    Extract headers from FITS files in given directories, using default values for missing fields.
 
     Parameters:
     directories (list): List of directory paths to search for FITS files.
+    default_values (dict): Dictionary of default values for the FITS headers.
 
     Returns:
     DataFrame: Pandas DataFrame containing the headers from the FITS files.
     """
     headers = []
-    required_fields = ["EXPOSURE", "DATE-LOC", "XBINNING", "GAIN", "XPIXSZ", "CCD-TEMP", 
-                       "FOCALLEN", "SITELAT", "SITELONG", "FILTER", "OBJECT", "FOCTEMP"]
+    required_fields_light = ["EXPOSURE", "DATE-LOC", "XBINNING", "GAIN", "XPIXSZ", "CCD-TEMP", 
+                             "FOCALLEN", "SITELAT", "SITELONG", "FILTER", "OBJECT", "FOCTEMP"]
+    required_fields_flat = ["FILTER", "GAIN", "XBINNING"]  # Fields specific for FLAT frames
+    swcreate_printed = False
 
     # Extract headers from FITS files
     for directory in directories:
         for root, _, files in os.walk(directory):
+            print(f"Reading directory: {root}")  # Print each directory being processed
             for file in files:
+
                 if file.lower().endswith('.fits'):
                     file_path = os.path.join(root, file)
                     try:
                         with fits.open(file_path) as hdul:
                             header = hdul[0].header
 
-                            # Check for LIGHT IMAGETYP and required fields
-                            if header.get('IMAGETYP') == 'LIGHT' and not all(field in header for field in required_fields):
-                                print("This code only works with N.I.N.A generated FITS files.")
-                                sys.exit(1)
+                            # Print SWCREATE from the first header file, if not already done
+                            if not swcreate_printed:
+                                swcreate = header.get('SWCREATE', 'unknown package')
+                                swcreate_printed = True
+
+                            # Determine required fields based on IMAGETYP
+                            imagetyp = header.get('IMAGETYP')
+                            required_fields = required_fields_light if imagetyp == 'LIGHT' else required_fields_flat if imagetyp == 'FLAT' else []
+                            for field in required_fields:
+                                header.setdefault(field, default_values.get(field))
 
                             headers.append(dict(header, file_path=file_path))
                     except (OSError, IOError) as e:
                         print(f"Error reading {file_path}: {e}")
-
+    print(f"\nImages captured by {swcreate}")
     return pd.DataFrame(headers)
-
 
 
 def format_seconds_to_hms(seconds):
@@ -303,7 +336,7 @@ def calculate_auxiliary_parameters(df,hfr_set):
         file_path = row['file_path']
         hfr_match = re.search(r'HFR_([0-9.]+)', file_path)
         hfr = float(hfr_match.group(1)) if hfr_match else hfr_set
-        imscale = row['XPIXSZ'] / row['FOCALLEN'] * 206.265
+        imscale = float(row['XPIXSZ']) / float(row['FOCALLEN']) * 206.265
         fwhm = hfr * imscale if hfr >=0.0 else 0.0
 
         df.at[index, 'HFR'] = hfr
@@ -410,43 +443,100 @@ def create_astrobin_output(aggregated_df, filter_df):
     df.rename(columns={'code': 'filter'}, inplace=True)
     return df 
     
-    
+def convert_default(defaults_df):
+    """
+    Converts specific fields of a DataFrame to appropriate data types and formats.
+
+    This function iterates over each row of the input DataFrame `defaults_df`. It converts
+    certain fields specified in `float_keys` to float types, and the 'XBINNING' field to an integer.
+    It also formats the 'DATE-LOC' field into a standardized datetime string.
+
+    Parameters:
+    defaults_df (pandas.DataFrame): A DataFrame where each row represents a key-value pair.
+        The DataFrame should have at least two columns: 'Key' and 'Value'.
+
+    Returns:
+    dict: A dictionary where each key-value pair corresponds to the 'Key' and 'Value' 
+        columns of the input DataFrame, after applying the necessary conversions and formatting.
+
+    Notes:
+    - Any non-convertible values in float and integer fields are coerced to NaN.
+    - The 'DATE-LOC' field is expected to be in the format '%Y-%m-%d' and is converted to 
+      an ISO 8601 format '%Y-%m-%dT%H:%M:%S.%f', truncated to milliseconds.
+    - The function assumes 'defaults_df' is not empty and contains the specified columns.
+    """
+
+    float_keys = ['EXPOSURE', 'GAIN', 'XPIXSZ', 'CCD-TEMP', 'FOCALLEN', 'SITELAT', 'SITELONG', 'FOCTEMP','HFR']
+    #Iterate over the DataFrame and update the 'Value' column
+    for i in range(len(defaults_df)):
+        key = defaults_df.at[i, 'Key']
+        if key in float_keys:
+            defaults_df.at[i, 'Value'] = pd.to_numeric(defaults_df.at[i, 'Value'], errors='coerce')
+        elif key == 'XBINNING':
+            defaults_df.at[i, 'Value'] = pd.to_numeric(defaults_df.at[i, 'Value'], downcast='integer', errors='coerce')
+
+    # Convert DATE-LOC to datetime object
+    defaults_df.loc[defaults_df['Key'] == 'DATE-LOC', 'Value'] = dt.strptime(defaults_df.loc[defaults_df['Key'] == 'DATE-LOC', 'Value'].iloc[0], "%Y-%m-%d").strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+
+    # return the DataFrame as a dictionary
+    return dict(zip(defaults_df['Key'], defaults_df['Value']))
 
 def main():
     """
     Main function to execute the script for processing astronomical data.
 
     Steps:
-    1. Validates the existence of 'filters.csv' file.
-    2. Validates the command line arguments for directory paths.
-    3. Consolidates FITS file headers from the specified directories.
-    4. Processes and exports the 'LIGHT' type data to a CSV file.
-    
-    The script exits with an error message if 'filters.csv' is not found,
-    if no directory paths are provided, or if any provided directories do not exist.
+    1. Validates the existence of 'defaults.csv' file and reads it.
+    2. Converts data types in the 'defaults' DataFrame using 'convert_default'.
+    3. Validates the existence of 'filters.csv' file and reads it.
+    4. Validates command line arguments for at least one directory path.
+    5. Validates the existence of specified directory paths.
+    6. Processes the directories to consolidate FITS file headers.
+    7. Summarizes session data and processes light type data.
+    8. Calculates auxiliary parameters and aggregates parameters for analysis.
+    9. Creates a final DataFrame for AstroBin output.
+    10. Exports the processed data to a CSV file.
+
+    The script exits with an error message if:
+    - 'defaults.csv' or 'filters.csv' is not found.
+    - No directory paths are provided, or any provided directories do not exist.
+    - Any issues occur during data processing.
+
+    Notes:
+    - The script assumes 'defaults.csv' contains necessary default values for FITS headers.
+    - 'filters.csv' is expected to contain filter-specific data.
+    - Directory paths provided as command line arguments should contain FITS files.
+    - The output CSV file is named based on the first directory path provided.
     """
-    hfr_set = 0
-    # Validate filter file
+
+     # Validate defaults file
+    defaults_file = 'defaults.csv'
+    if not os.path.exists(defaults_file):
+        print(f'{defaults_file} not found.')
+        sys.exit(1)
+
+    defaults_df = pd.read_csv('defaults.csv')
+    #Ensure correct data types in data frame
+    defaults = convert_default(defaults_df)
+    
+    #obtain hfr_set
+    hfr_set = defaults['HFR']
+    
+    #Validate filter file
     filter_file = 'filters.csv'
     if not os.path.exists(filter_file):
         print(f'{filter_file} not found.')
         sys.exit(1)
     
     filter_df = pd.read_csv(filter_file)
+    
 
     # Validate command line arguments for directory paths and hfr_set
     if len(sys.argv) < 2:
         print("Error: Please provide at least one directory path.")
         sys.exit(1)
 
-    # Extract hfr_set, if provided and valid
-    try:
-        hfr_set = float(sys.argv[-1])
-        directory_paths = sys.argv[1:-1]
-    except ValueError:
-        hfr_set = 0
-        directory_paths = sys.argv[1:]
-
+    directory_paths = sys.argv[1:]
     # Validate directory paths
     for directory in directory_paths:
         if not os.path.isdir(directory):
@@ -454,8 +544,8 @@ def main():
             sys.exit(1)
 
     # Process directories and consolidate headers
-    print('Reading FITS headers...')
-    headers_df = extract_fits_headers(directory_paths)
+    print('\nReading FITS headers...\n')
+    headers_df = extract_fits_headers(directory_paths,defaults)
     summarize_session(headers_df)
     calibration_df = create_calibration_df(headers_df)
     lights_df = create_lights_df(headers_df, calibration_df)
@@ -467,6 +557,7 @@ def main():
     output_csv = os.path.basename(directory_paths[0]) + " acquisition.csv"
     astroBin_df.to_csv(output_csv, index=False)
     print(f"\nData exported to {output_csv}")
+
 
 if __name__ == "__main__":
     main()
