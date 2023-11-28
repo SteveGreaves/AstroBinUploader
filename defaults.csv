@@ -6,6 +6,7 @@ GAIN,0,Camera gain
 XPIXSZ,1,Camera pixel size in um
 CCD-TEMP,-10,Camera sensor temperature in degrees C
 FOCALLEN,540,Telescope focal length in mm
+FOCRATIO,5.4,Telescope focal ratio
 SITELAT,52.25,Observation site latitude in decimal degrees
 SITELONG,-0.12,Observation site longitude in decimal degrees
 FILTER,No Filter,Filter name 
