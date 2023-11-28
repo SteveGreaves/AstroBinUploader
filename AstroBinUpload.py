@@ -1,6 +1,16 @@
 # coding: utf-8
 
 """
+
+version 1.0.3
+
+27th November 2023 changes
+
+1) Handles pre and post text spaces in data from csv files
+2) Can process FITS and XIFS files or a mxiture of both
+3) Focal ratio now extracted from header and reported.
+4) Exports a session summary report
+
 acqusition.csv uploader see (https://welcome.astrobin.com/importing-acquisitions-from-csv/)
 
 This implementation is not endorsed nor related with AstroBin development team.
@@ -32,57 +42,158 @@ import warnings
 import re
 import math
 from datetime import datetime as dt
+import xml.etree.ElementTree as ET
+import struct
 
 # Suppressing warnings for specific use-case, but be aware of potential debugging issues
 warnings.filterwarnings('ignore')
 
 # Define functions
 
-def extract_fits_headers(directories, default_values):
+def read_xisf_header(file_path):
     """
-    Extract headers from FITS files in given directories, using default values for missing fields.
+    Reads and returns the header of an XISF file.
 
-    Parameters:
-    directories (list): List of directory paths to search for FITS files.
-    default_values (dict): Dictionary of default values for the FITS headers.
+    This function opens an XISF file, checks its signature to verify
+    the format, and then reads the header of the file. If the file
+    is not in the expected format or an error occurs, it returns None.
+
+    Args:
+    file_path (str): The path of the XISF file to be read.
 
     Returns:
-    DataFrame: Pandas DataFrame containing the headers from the FITS files.
+    str or None: The header of the XISF file as a string, or None if 
+    the file format is invalid or an error occurs.
+    """
+    try:
+        with open(file_path, 'rb') as file:
+            signature = file.read(8).decode('ascii')
+            # Check for the XISF signature
+            if signature != 'XISF0100':
+                print("Invalid file format")
+                return None
+            # Read and skip header length and reserved field
+            header_length = struct.unpack('<I', file.read(4))[0]
+            file.read(4)  # Skip reserved field
+            xisf_header = file.read(header_length).decode('utf-8')
+            
+            return xisf_header
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+
+def xml_to_dataframe(xml_data):
+    """
+    Parses XML data and extracts FITSKeyword information into a pandas DataFrame.
+
+    Parameters:
+    xml_data (str): A string containing the XML data.
+
+    Returns:
+    DataFrame: A pandas DataFrame with columns ['FITSKeyword', 'value', 'comment'].
+    """
+
+    # Register the namespace
+    ns = {'xisf': 'http://www.pixinsight.com/xisf'}
+    ET.register_namespace('', ns['xisf'])
+
+    # Parse the XML data
+    root = ET.fromstring(xml_data)
+
+    # Create a list to store our data
+    data = []
+
+    # Iterate through each 'FITSKeyword' tag in the XML
+    for fits_keyword in root.findall('.//xisf:FITSKeyword', namespaces=ns):
+        #print(fits_keyword)
+        name = fits_keyword.get('name')
+        value = fits_keyword.get('value')
+        comment = fits_keyword.get('comment')
+
+        # Append to our data list
+        data.append({'FITSKeyword': name, 'value': value, 'comment': comment})
+
+    # Convert the list to a DataFrame
+    df = pd.DataFrame(data)
+
+    return df
+
+
+def extract_headers(directories, default_values):
+
+    """
+    Extracts headers from FITS and XISF files in specified directories and returns them as a DataFrame.
+
+    This function walks through each provided directory, reads FITS and XISF files, extracts headers,
+    applies default values for missing fields, and returns a DataFrame of these headers with specific data types.
+
+    Args:
+    directories (list): A list of directory paths to search for FITS and XISF files.
+    default_values (dict): A dictionary of default values for missing header fields.
+
+    Returns:
+    pandas.DataFrame: A DataFrame containing headers from all FITS and XISF files in the provided directories.
     """
     headers = []
-    required_fields_light = ["EXPOSURE", "DATE-LOC", "XBINNING", "GAIN", "XPIXSZ", "CCD-TEMP", 
-                             "FOCALLEN", "SITELAT", "SITELONG", "FILTER", "OBJECT", "FOCTEMP"]
-    required_fields_flat = ["FILTER", "GAIN", "XBINNING"]  # Fields specific for FLAT frames
+    required_types = {  "CCD-TEMP": "float64", "DATE-LOC": "object","EXPOSURE": "float64","FILTER": "object", "FOCALLEN": "float64", "FOCRATIO": "float64",
+                        "FOCTEMP": "float64","GAIN": "int64","IMAGETYP": "object", "OBJECT": "object","SITELAT": "float64", "SITELONG": "float64", "SWCREATE": "object", "XBINNING": "int64", "XPIXSZ": "float64"
+
+}
+    required_fields_light = ["EXPOSURE", "DATE-LOC", "XBINNING", "GAIN", "XPIXSZ", "CCD-TEMP", "FOCALLEN", "FOCRATIO","SITELAT", "SITELONG", "FILTER", "OBJECT", "FOCTEMP"]
+    required_fields_flat = ["FILTER", "GAIN", "XBINNING"]
+    swcreate = 'unknown package'
     swcreate_printed = False
 
-    # Extract headers from FITS files
     for directory in directories:
         for root, _, files in os.walk(directory):
-            print(f"Reading directory: {root}")  # Print each directory being processed
+            print(f"Reading directory: {root}")
             for file in files:
+                file_path = os.path.join(root, file)
 
-                if file.lower().endswith('.fits'):
-                    file_path = os.path.join(root, file)
+                if file.lower().endswith(('.fits', '.xisf')):
                     try:
-                        with fits.open(file_path) as hdul:
-                            header = hdul[0].header
+                        if file.lower().endswith('.fits'):
+                            with fits.open(file_path) as hdul:
+                                header = hdul[0].header
+                                header['file_path'] = file_path
+                            
+                        elif file.lower().endswith('.xisf'):
+                            xisf_header = read_xisf_header(file_path)
+                            df = xml_to_dataframe(xisf_header)
 
-                            # Print SWCREATE from the first header file, if not already done
-                            if not swcreate_printed:
-                                swcreate = header.get('SWCREATE', 'unknown package')
-                                swcreate_printed = True
+                            # Convert DataFrame to a dictionary
+                            header_dict = {row['FITSKeyword']: row['value'] for _, row in df.iterrows()}
+                            header_dict['file_path'] = file_path
+                            header = header_dict
 
-                            # Determine required fields based on IMAGETYP
-                            imagetyp = header.get('IMAGETYP')
-                            required_fields = required_fields_light if imagetyp == 'LIGHT' else required_fields_flat if imagetyp == 'FLAT' else []
-                            for field in required_fields:
-                                header.setdefault(field, default_values.get(field))
+                        # Check and print SWCREATE if not done
+                        if not swcreate_printed:
+                            swcreate = header.get('SWCREATE', 'unknown package')
+                            swcreate_printed = True
 
-                            headers.append(dict(header, file_path=file_path))
-                    except (OSError, IOError) as e:
+                        # Determine required fields based on IMAGETYP
+                        imagetyp = header.get('IMAGETYP')
+                        required_fields = required_fields_light if imagetyp == 'LIGHT' else required_fields_flat if imagetyp == 'FLAT' else []
+                        for field in required_fields:
+                            header.setdefault(field, default_values.get(field))
+
+                        headers.append(header)
+
+                    except Exception as e:
                         print(f"Error reading {file_path}: {e}")
+
     print(f"\nImages captured by {swcreate}")
-    return pd.DataFrame(headers)
+    #Cast each column to the specified data type, if the column exists in the DataFrame
+    headers_df = pd.DataFrame(headers)
+    for column, dtype in required_types.items():
+        if column in headers_df.columns:
+            #print(column, headers_df[column]) 
+            headers_df[column] = headers_df[column].astype(dtype) 
+
+    
+    return headers_df  
 
 
 def format_seconds_to_hms(seconds):
@@ -115,8 +226,11 @@ def summarize_session(df):
     Parameters:
     df (DataFrame): The DataFrame containing the FITS headers data.
     """
+    summary = ""
     if 'IMAGETYP' in df:
-        print("\nObservation session Summary:")
+        txt = "\nObservation session Summary:"
+        summary+=txt 
+        print(txt)
 
         # Process LIGHT, FLAT, BIAS, and DARK frames
         for imagetyp in ['LIGHT', 'FLAT', 'BIAS', 'DARK']:
@@ -125,12 +239,16 @@ def summarize_session(df):
 
                 # For LIGHT and FLAT frames
                 if imagetyp in ['LIGHT', 'FLAT']:
-                    print(f"\n{imagetyp}S:")
+                    txt = f"\n{imagetyp}S:"
+                    summary+=txt
+                    print(txt)
                     for filter_type, group_df in group.groupby('FILTER'):
                         frame_count = group_df.shape[0]
                         total_exposure = group_df['EXPOSURE'].sum()
                         formatted_time = format_seconds_to_hms(total_exposure)
-                        print(f"  Filter {filter_type}:\t {frame_count} frames, Exposure time: {formatted_time}")
+                        txt = f"\n  Filter {filter_type}:\t {frame_count} frames, Exposure time: {formatted_time}"
+                        print(txt)
+                        summary+=txt
 
                 # For BIAS and DARK frames, sum on GAIN
                 elif imagetyp in ['BIAS', 'DARK']:
@@ -138,15 +256,24 @@ def summarize_session(df):
                         frame_count = gain_group.shape[0]
                         total_exposure = gain_group['EXPOSURE'].sum()
                         formatted_time = format_seconds_to_hms(total_exposure)
-                        print(f"\n{imagetyp} with GAIN {gain_value}:\t {frame_count} frames, Exposure time: {formatted_time}")
+                        txt = f"\n{imagetyp} with GAIN {gain_value}:\t {frame_count} frames, Exposure time: {formatted_time}"
+                        print(txt)
+                        summary+=txt
                     
                 # Total exposure for LIGHT frames
                 if imagetyp == 'LIGHT':
                     total_light_exposure = group['EXPOSURE'].sum()
                     formatted_total_light_time = format_seconds_to_hms(total_light_exposure)
-                    print(f"\nTotal session exposure for LIGHTs:\t {formatted_total_light_time}")
+                    txt = f"\n\nTotal session exposure for LIGHTs:\t {formatted_total_light_time}\n"
+                    print(txt)
+                    summary+=txt
     else:
-        print("No 'IMAGETYP' column found in headers.")
+        txt = "No 'IMAGETYP' column found in headers."
+        print(txt)
+        summary+=txt
+
+    return summary
+
 
 
 
@@ -195,19 +322,6 @@ def create_lights_df(df: pd.DataFrame, calibration_df: pd.DataFrame)-> pd.DataFr
 def get_bortle_sqm(lat, lon, api_key, api_endpoint):
     """
     Retrieves the Bortle scale classification and SQM (Sky Quality Meter) value for a given latitude and longitude.
-
-    This function makes a request to a specified API endpoint using the provided API key. It fetches the artificial
-    brightness for the specified coordinates and calculates the SQM. The Bortle scale classification is then determined
-    based on the SQM value.
-
-    Args:
-    lat (float): Latitude of the location.
-    lon (float): Longitude of the location.
-    api_key (str): API key for accessing the light pollution data.
-    api_endpoint (str): URL of the API endpoint to retrieve light pollution data.
-
-    Returns:
-    tuple: A tuple containing the Bortle scale classification (int) and the SQM value (float), rounded to two decimal places.
     """
     params = {
         'ql': 'wa_2015',
@@ -215,12 +329,34 @@ def get_bortle_sqm(lat, lon, api_key, api_endpoint):
         'qd': f'{lon},{lat}',
         'key': api_key
     }
-    response = requests.get(api_endpoint, params=params)
-    response.raise_for_status()
-    artificial_brightness = float(response.text)
-    sqm = (math.log10((artificial_brightness + 0.171168465)/108000000)/-0.4)
-    bortle_class = sqm_to_bortle(sqm)
-    return bortle_class, round(sqm, 2)
+
+    try:
+        response = requests.get(api_endpoint, params=params)
+        response.raise_for_status()  # Will raise an HTTPError if the HTTP request returned an unsuccessful status code
+
+        # Check if the response from the server is 'Invalid authentication.'
+        if response.text.strip() == 'Invalid authentication.':
+            print("\nAuthentication error: Missing or invalid API key.")
+            return 0, 0
+
+        # Continue processing if the response is valid
+        artificial_brightness = float(response.text)
+        sqm = (math.log10((artificial_brightness + 0.171168465)/108000000)/-0.4)
+        bortle_class = sqm_to_bortle(sqm)
+        return bortle_class, round(sqm, 2)
+
+    except requests.exceptions.HTTPError as err:
+        # Handle HTTP errors (e.g., authentication error, not found, etc.)
+        print(f"HTTP Error: {err}")
+        return 0, 0
+    except ValueError:
+        # Handle the case where conversion to float fails
+        print("Could not convert response to float.")
+        return 0, 0
+    except Exception as e:
+        # Handle any other exceptions
+        print(f"An error occurred: {e}")
+        return 0, 0
 
 def sqm_to_bortle(sqm):
     """
@@ -254,8 +390,36 @@ def sqm_to_bortle(sqm):
         return 9
 
 
+# Function to read CSV, strip whitespace from string columns, and set NaN values to zero for all columns
+def read_and_strip(file_name):
+    if os.path.exists(file_name):
+        df = pd.read_csv(file_name)
+        
+        # Strip whitespace from string columns
+        df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
+        
+        # Check for empty columns and fill NaN values with zeros for those columns
+        empty_columns = df.columns[df.isna().all()]
+        df[empty_columns] = df[empty_columns].fillna(0)
+        
+        # Fill NaN values with zero for all other columns
+        df = df.fillna(0)
+        
+        return df
+    else:
+        return None
 
-def calculate_auxiliary_parameters(df,hfr_set):
+
+
+# Helper function to create a CSV file with default content
+def create_default_csv(file_name, default_data):
+    default_df = pd.DataFrame(default_data)
+    default_df.to_csv(file_name, index=False)
+    print(f"\nWarning {file_name} not found. A default file has been created.")
+
+
+
+def calculate_auxiliary_parameters(df, hfr_set):
     """
     Calculates and updates auxiliary parameters for each row in a DataFrame based on astronomical observation data.
 
@@ -266,85 +430,96 @@ def calculate_auxiliary_parameters(df,hfr_set):
     based on provided FITS file information in the DataFrame.
 
     Args:
-    df (pd.DataFrame): A DataFrame containing FITS file data. Expected to have columns 'SITELAT', 'SITELONG', 'file_path',
-                       'XPIXSZ', and 'FOCALLEN'.
-    hfr_set (float)  : A floating point number representing the half-flux radius in pixels entered by the user.
+        df (pd.DataFrame): A DataFrame containing FITS file data. Expected to have columns 'SITELAT', 'SITELONG', 'file_path',
+                           'XPIXSZ', and 'FOCALLEN'.
+        hfr_set (float): A floating point number representing the half-flux radius in pixels entered by the user.
 
     Returns:
-    pd.DataFrame: The input DataFrame with additional columns for Bortle scale, SQM, HFR, IMSCALE, and FWHM.
-                  These columns are named 'BORTLE', 'SQM', 'HFR', 'IMSCALE', and 'FWHM', respectively.
+        pd.DataFrame: The input DataFrame with additional columns for Bortle scale, SQM, HFR, IMSCALE, and FWHM.
+                      These columns are named 'BORTLE', 'SQM', 'HFR', 'IMSCALE', and 'FWHM', respectively.
 
     Notes:
-    - The function reads API key and endpoint from 'secret.csv'.
-    - If 'secret.csv' is not found, it requires manual data entry for Bortle and SQM in 'configuration.csv'.
-    - The 'sites.csv' file is used to store and retrieve existing Bortle and SQM values for known locations.
-    - HFR, IMSCALE, and FWHM calculations are based on regex matching and basic astronomical formulas.
+        - The function reads API key and endpoint from 'secret.csv'.
+        - If 'secret.csv' is not found, it requires manual data entry for Bortle and SQM in 'configuration.csv'.
+        - The 'sites.csv' file is used to store and retrieve existing Bortle and SQM values for known locations.
+        - HFR, IMSCALE, and FWHM calculations are based on regex matching and basic astronomical formulas.
     """
 
+    # Validate and read 'sites.csv'
+    sites_file = 'sites.csv'
+    sites_df = read_and_strip(sites_file) if os.path.exists(sites_file) else pd.DataFrame(columns=['Latitude', 'Longitude', 'Bortle', 'SQM'])
 
-    try:
-        sites = pd.read_csv('sites.csv')
-    except FileNotFoundError:
-        sites = pd.DataFrame(columns=['Latitude', 'Longitude', 'Bortle', 'SQM'])
+    # Validate and read 'secrets.csv'
+    secrets_df = read_and_strip('secrets.csv')
+    if secrets_df is None:
+        default_data = {'API Key': [""], 'API Endpoint': ["https://www.lightpollutionmap.info/QueryRaster/"]}
+        create_default_csv('secrets.csv', default_data)
+        secrets_df = read_and_strip('secrets.csv')
 
-    try:
-        secret = pd.read_csv('secret.csv')
-        api_key = secret['API Key'].iloc[0]
-        api_endpoint = secret['API Endpoint'].iloc[0]
-    except FileNotFoundError:
-        print("Secret file 'secret.csv' not found. Please provide API key and endpoint.")
-        api_key = None
-        api_endpoint = None
+    # Extract API key and endpoint
+    api_key = secrets_df['API Key'].iloc[0] if secrets_df is not None else None
+    # Set api_key to None if it's not available in secrets_df
+    api_endpoint = secrets_df['API Endpoint'].iloc[0] if secrets_df is not None else None
+    
+    
 
     processed_sites = set()  # Set to keep track of processed lat-lon pairs
 
     for index, row in df.iterrows():
-        lat, lon = round(row['SITELAT'],3), round(row['SITELONG'],3)
+        lat, lon = round(row['SITELAT'], 2), round(row['SITELONG'], 2)
         
-        site_data = sites[(sites['Latitude'] == lat) & (sites['Longitude'] == lon)]
+        # Checking for existing site data
+        site_data = sites_df[(sites_df['Latitude'] == lat) & (sites_df['Longitude'] == lon)]
         if site_data.empty and api_key:
+            # Fetch Bortle and SQM from API
             try:
-                bortle, sqm = get_bortle_sqm(lat, lon, api_key,api_endpoint)
+                bortle, sqm = get_bortle_sqm(lat, lon, api_key, api_endpoint)
                 new_site = {'Latitude': lat, 'Longitude': lon, 'Bortle': bortle, 'SQM': sqm}
                 new_site_df = pd.DataFrame([new_site])
-                sites = pd.concat([sites, new_site_df], ignore_index=True)
-                sites.to_csv('sites.csv', index=False)
-                df.at[index, 'BORTLE'] = bortle
-                df.at[index, 'SQM'] = sqm
-                print(f"\nRetrieved Bortle of {bortle} and SQM of {sqm} mag/arc-seconds^2 for lat {lat}, lon {lon} from API at {api_endpoint}.")
+                sites_df = pd.concat([sites_df, new_site_df], ignore_index=True)
+                sites_df.to_csv('sites.csv', index=False)
+                processed_sites.add((lat, lon))  # Mark as processed
+                if bortle !=0:
+                    print(f"\nRetrieved Bortle of {bortle} and SQM of {sqm} mag/arc-seconds^2 for lat {lat}, lon {lon} from API at {api_endpoint}.")
             except requests.exceptions.RequestException as e:
                 print(f"Failed to retrieve data from the API for lat {lat}, lon {lon}: {e}")
-                df.at[index, 'BORTLE'] = 0
-                df.at[index, 'SQM'] = 0
+                bortle, sqm = 0, 0
         elif not site_data.empty:
-            if (lat, lon) not in processed_sites:
-                processed_sites.add((lat, lon))
-                bortle, sqm = site_data.iloc[0]['Bortle'], site_data.iloc[0]['SQM']
-                print(f"\nUsed existing Bortle of {bortle} and SQM of {sqm} mag/arc-seconds^2 for lat {lat}, lon {lon} from sites.csv.")
-               
             bortle, sqm = site_data.iloc[0]['Bortle'], site_data.iloc[0]['SQM']
-            df.at[index, 'BORTLE'] = bortle
-            df.at[index, 'SQM'] = sqm
+
+            if bortle == 0 or sqm == 0:
+                if (lat, lon) not in processed_sites:  # Check if lat-lon pair has been processed before
+                    processed_sites.add((lat, lon))  # Mark as processed
+                    print(f"\nWarning: Bortle or SQM value for lat {lat}, lon {lon} is set to zero.")
+            else:
+                if (lat, lon) not in processed_sites:  # Check if lat-lon pair has been processed before
+                    print(f"\nUsing Bortle of {bortle} and SQM of {sqm} for lat {lat}, lon {lon} from sites.csv.")
+                    processed_sites.add((lat, lon))  # Mark as processed
         else:
-            if (lat, lon) not in processed_sites:
-                processed_sites.add((lat, lon))
-                print(f"\nNo data found for lat {lat}, lon {lon}. Set Bortle and SQM to 0.")
-            df.at[index, 'BORTLE'] = 0
-            df.at[index, 'SQM'] = 0
+            if (lat, lon) not in processed_sites:  # Check if lat-lon pair has been processed before
+                    processed_sites.add((lat, lon))  # Mark as processed
+                    bortle, sqm = 0, 0
+                    print(f"\nNo data found for lat {lat}, lon {lon}. Set Bortle and SQM to 0.")
+        
+        # Update the DataFrame with Bortle and SQM
+        df.at[index, 'BORTLE'] = bortle
+        df.at[index, 'SQM'] = sqm
 
-
+        # Calculate HFR, IMSCALE, and FWHM
         file_path = row['file_path']
         hfr_match = re.search(r'HFR_([0-9.]+)', file_path)
         hfr = float(hfr_match.group(1)) if hfr_match else hfr_set
         imscale = float(row['XPIXSZ']) / float(row['FOCALLEN']) * 206.265
-        fwhm = hfr * imscale if hfr >=0.0 else 0.0
+        fwhm = hfr * imscale if hfr >= 0.0 else 0.0
 
         df.at[index, 'HFR'] = hfr
         df.at[index, 'IMSCALE'] = imscale
         df.at[index, 'FWHM'] = fwhm
 
     print('\nCompleted sky quality extraction')
+    #print(df.keys()) 
     return df.round(2)
+
 
 
 def aggregate_parameters(lights_df, calibration_df):
@@ -379,7 +554,8 @@ def aggregate_parameters(lights_df, calibration_df):
             meanFwhm = ('fwhm', 'mean')
         ).reset_index()
     aggregated_df.rename(columns={'xbinning': 'binning',
-                                  'exposure': 'duration'}, inplace=True)
+                                  'exposure': 'duration',
+                                   'focratio' : 'fnumber'}, inplace=True)
 
     
     
@@ -403,8 +579,13 @@ def aggregate_parameters(lights_df, calibration_df):
 
     aggregated_df['bortle'] = lights_df['bortle']
     aggregated_df['meanSqm'] = lights_df['sqm']
+    
+    aggregated_df['fNumber'] = lights_df['focratio']
+    
 
     aggregated_df['sensorCooling'] = aggregated_df['sensorCooling'].round().astype(int)
+
+    #print(aggregated_df['focratio'])
 
     return aggregated_df.round(2)
 
@@ -437,7 +618,7 @@ def create_astrobin_output(aggregated_df, filter_df):
     # Insert the 'code' column right after 'filter'
     aggregated_df.insert(filter_col_index + 1, 'code', aggregated_df['filter'].map(filter_to_code))
     column_order = ['date', 'code', 'number', 'duration', 'binning', 'gain', 
-                    'sensorCooling', 'darks', 'flats', 'flatDarks', 'bias', 'bortle',
+                    'sensorCooling', 'fNumber','darks', 'flats', 'flatDarks', 'bias', 'bortle',
                     'meanSqm', 'meanFwhm', 'temperature']
     df = aggregated_df.copy().drop('filter',axis=1).reindex(columns=column_order).round(2)
     df.rename(columns={'code': 'filter'}, inplace=True)
@@ -466,7 +647,7 @@ def convert_default(defaults_df):
     - The function assumes 'defaults_df' is not empty and contains the specified columns.
     """
 
-    float_keys = ['EXPOSURE', 'GAIN', 'XPIXSZ', 'CCD-TEMP', 'FOCALLEN', 'SITELAT', 'SITELONG', 'FOCTEMP','HFR']
+    float_keys = ['EXPOSURE', 'GAIN', 'XPIXSZ', 'CCD-TEMP', 'FOCALLEN','FOCRATIO', 'SITELAT', 'SITELONG', 'FOCTEMP','HFR']
     #Iterate over the DataFrame and update the 'Value' column
     for i in range(len(defaults_df)):
         key = defaults_df.at[i, 'Key']
@@ -480,6 +661,7 @@ def convert_default(defaults_df):
 
     # return the DataFrame as a dictionary
     return dict(zip(defaults_df['Key'], defaults_df['Value']))
+
 
 def main():
     """
@@ -509,27 +691,20 @@ def main():
     - The output CSV file is named based on the first directory path provided.
     """
 
-     # Validate defaults file
+     # Validate and read 'defaults.csv'
     defaults_file = 'defaults.csv'
-    if not os.path.exists(defaults_file):
-        print(f'{defaults_file} not found.')
-        sys.exit(1)
+    defaults_df = read_and_strip(defaults_file)
 
-    defaults_df = pd.read_csv('defaults.csv')
     #Ensure correct data types in data frame
     defaults = convert_default(defaults_df)
     
     #obtain hfr_set
     hfr_set = defaults['HFR']
-    
-    #Validate filter file
+        
+    # Validate and read 'filters.csv'
     filter_file = 'filters.csv'
-    if not os.path.exists(filter_file):
-        print(f'{filter_file} not found.')
-        sys.exit(1)
-    
-    filter_df = pd.read_csv(filter_file)
-    
+    filter_df = read_and_strip(filter_file)
+        
 
     # Validate command line arguments for directory paths and hfr_set
     if len(sys.argv) < 2:
@@ -545,21 +720,28 @@ def main():
 
     # Process directories and consolidate headers
     print('\nReading FITS headers...\n')
-    headers_df = extract_fits_headers(directory_paths,defaults)
-    summarize_session(headers_df)
+    headers_df = extract_headers(directory_paths,defaults)
+    summary = summarize_session(headers_df)
     calibration_df = create_calibration_df(headers_df)
     lights_df = create_lights_df(headers_df, calibration_df)
     lights_df = calculate_auxiliary_parameters(lights_df,hfr_set)
     aggregated_df = aggregate_parameters(lights_df, calibration_df)
     astroBin_df = create_astrobin_output(aggregated_df, filter_df)
 
+    
+    #Export summary
+    summary_txt = os.path.basename(directory_paths[0]) + " session summary.txt"
+    # Open the file for writing
+    with open(summary_txt, 'w') as file:
+        # Write the text string to the file
+        file.write(summary)
+    print(f"\nData exported to {summary_txt}")
     # Export data to CSV
     output_csv = os.path.basename(directory_paths[0]) + " acquisition.csv"
     astroBin_df.to_csv(output_csv, index=False)
     print(f"\nData exported to {output_csv}")
 
 
+
 if __name__ == "__main__":
     main()
-
-
