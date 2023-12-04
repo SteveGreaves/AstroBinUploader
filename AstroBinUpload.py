@@ -112,8 +112,8 @@ import re
 configurations = {
     'defaults': {
         'Key': ['IMAGETYP','EXPOSURE', 'DATE-LOC', 'XBINNING', 'GAIN', 'XPIXSZ', 'CCD-TEMP', 'FOCALLEN', 'FOCRATIO', 'SITELAT', 'SITELONG', 'FILTER', 'OBJECT', 'FOCTEMP', 'SWCREATE','HFR'],
-        'value': ['LIGHT','100', '2023-01-01', '1', '0', '1', '-10', '540', '5.4', '52.25', '-0.12', 'No Filter', 'No target', '20','Unknown package', '1.6'],
-        'comment': ['Exposure type','Exposure time in seconds', 'Observation date', 'Camera binning', 'Camera gain', 'Camera pixel size in um', 'Camera sensor temperature in degrees C', 'Telescope focal length in mm', 'Telescope focal ratio', 'Observation site latitude in decimal degrees', 'Observation site longitude in decimal degrees', 'Filter name', 'Target name', 'Ambient temperature in degrees C as measure by the focuser','Creation package', 'Half-flux radius in pixels']
+        'Value': ['LIGHT','100', '2023-01-01', '1', '0', '1', '-10', '540', '5.4', '52.25', '-0.12', 'No Filter', 'No target', '20','Unknown package', '1.6'],
+        'Comment': ['Exposure type','Exposure time in seconds', 'Observation date', 'Camera binning', 'Camera gain', 'Camera pixel size in um', 'Camera sensor temperature in degrees C', 'Telescope focal length in mm', 'Telescope focal ratio', 'Observation site latitude in decimal degrees', 'Observation site longitude in decimal degrees', 'Filter name', 'Target name', 'Ambient temperature in degrees C as measure by the focuser','Creation package', 'Half-flux radius in pixels']
     },
     'filters': {
         'filter': ['Ha', 'SII', 'OIII', 'Red', 'Green', 'Blue', 'Lum', 'CLS'],
@@ -192,6 +192,7 @@ def read_or_create_csv(dictionaries):
         if df.to_csv(index=False) != pd.read_csv(csv_file).to_csv(index=False):
             # Save the DataFrame back to the CSV file
             df.to_csv(csv_file, index=False)
+        
 
         dataframes[dictionary_name] = df
 
@@ -308,11 +309,11 @@ def extract_headers(directories, default_values):
 
         # Add entries from fits_header that also exist in default_header
         for k, v in fits_header.items():
-            if k in default_header['value'].index:
+            if k in default_header['Value'].index:
                 updated_fits_header[k] = v
 
         # Add entries from default_header that don't exist in updated_fits_header
-        for k, v in default_header['value'].items():
+        for k, v in default_header['Value'].items():
             if k not in updated_fits_header:
                 updated_fits_header[k] = v
 
@@ -670,7 +671,7 @@ def calculate_auxiliary_parameters(df, defaults_df, secret_df, sites_df):
 
     
     # Extract default HFR value from defaults DataFrame
-    hfr_set = defaults_df.loc['HFR', 'value'].strip()
+    hfr_set = defaults_df.loc['HFR', 'Value'].strip()
 
     # Set to keep track of processed latitude-longitude pairs
     processed_sites = set()
