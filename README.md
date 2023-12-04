@@ -14,10 +14,12 @@
 - [Finding the AstroBin Numeric ID for Filters](#finding-the-astrobin-numeric-id-for-filters)
 - [Creating the filters.csv File](#creating-the-filterscsv-file)
 - [sites.csv file](#sitescsv-file)
-- [secret.csv and Accessing Sky Quality Data](#secretcsv-and-accessing-sky-quality-data)
+- [Accessing sky quality data and secret.csv ](#secretcsv-and-accessing-sky-quality-data)
 - [FWHM values](#fwhm-values)
 - [default.csv file](#defaultcsv-file)
-- [Contributing to AstroImage Processing Script](#contributing-to-astroimage-processing-script)
+- [Night Time Imaging N' Astronomy [N.I.N.A]](#night-time-imaging-n-astronomy-nina)
+- [Pixinsight XISF headers](#pixinsight-xisf-headers)
+- [Contributing to AstroImageUpload.py Processing Script](#contributing-to-astroimage-processing-script)
 - [Contact](#contact)
 - [Licence](#licence)
 
@@ -69,7 +71,7 @@ The script requires the following external CSV files for its operation:
 - **secret.csv**: Holds API keys and endpoints for external services (e.g., light pollution data).
 - **defaults.csv**: Holds default values for missing FITS header file elements and HFR.
 
-Ensure these files are present in the same directory as the script. You can copy those in the repository and modify as required.
+You can copy those in the repository and modify as required or the code will create the files at runtime if the don't exist
 
 ### Running the Script
 
@@ -78,168 +80,148 @@ Run the script from the installation directory as follows:
 
         `python3 AstroBinUpload.py directory_path1 directory_path2 ...  directory_pathx`.
 
-There can be as many directory paths as required to capture all the image files, but the minimum is one. The image files can be collected in one or more directories. If items are missing from the FITS/XISF headers they are substituted with values taken from the 'defaults.csv' file. Edit the 'defaults.csv' file so that it reflects your equipment set-up. HFR is taken from the 'defaults.csv' file and used if there is no HFR value found in the image file path. The aim of this approach is to make the code as agnostic as possible to the program that generates the image file header.  
+There can be as many directory paths as required to capture all the image files, but the minimum is one. The image files can be collected in one or more directories. If items are missing from the FITS/XISF headers they are substituted with values taken from the 'defaults.csv' file. Edit the 'defaults.csv' file so that it reflects your equipment set-up. HFR is taken from the 'defaults.csv' file and used if there is no HFR value found in the image file path. The aim of this approach is to make the code as agnostic as possible to the program that generates the image file header.
+The target name is taken from the root directory of the first directory, so don't process your calibration frames first  
 
 An example program call is given below:
 
-        'python3 AstroBinUpload.py "/mnt/HDD_8TB/Preselected/Rosette Nebula (Caldwell 49)" "/mnt/HDD_8TB/Preselected/Calibration data/30th April 2023" "/mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/DARK" '
+        'python3 AstroBinUpload.py "/mnt/HDD_8TB/Preselected/Sadr Region" "/mnt/HDD_8TB/Preselected/Calibration data/30th April 2023" "/mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/DARK" '
 
 This generates the following command line output:
 
+        Reading defaults.csv
+        Reading filters.csv
+        Reading secret.csv
+        Reading sites.csv
+        Processing directory: /mnt/HDD_8TB/Preselected/Sadr Region
+        Processing directory: /mnt/HDD_8TB/Preselected/Calibration data/11th August 2023/FLAT
+        Processing directory: /mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/DARK
+        Processing directory: /mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/BIAS
+
         Reading FITS headers...
-        Extracting headers from /mnt/HDD_8TB/Preselected/Rosette Nebula (Caldwell 49)
-        Extracting headers from OIII
-        Extracting headers from Blue
-        Extracting headers from Ha
-        Extracting headers from SII
-        Extracting headers from Red
-        Extracting headers from Green
-        Extracting headers from /mnt/HDD_8TB/Preselected/Calibration data/30th April 2023
-        Extracting headers from BIAS
-        Extracting headers from FLAT
-        Extracting headers from /mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/DARK
-        Header extraction complete
+
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/OIII
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/OIII/11th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/OIII/10th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/OIII/8th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/OIII/9th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/Ha
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/Ha/6th July
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/Ha/7th July
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/Ha/5th July
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII/10th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII/7th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII/7th July
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII/30th July
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/SII/8th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/RGB
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Sadr Region/RGB/11th August
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Calibration data/11th August 2023/FLAT
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/DARK
+        Extracting headers from directory: /mnt/HDD_8TB/Preselected/Calibration data/20th April 2023/BIAS
+
+        Images captured by N.I.N.A. 3.0.0.1016
 
         Observation session Summary:
 
         LIGHTS:
-        Filter Ha: 63 frames, Exposure time: 10.0 hrs 30.0 mins 0 secs
-        Filter OIII: 56 frames, Exposure time: 9.0 hrs 20.0 mins 0 secs
-        Filter SII: 75 frames, Exposure time: 12.0 hrs 30.0 mins 0 secs
 
-        Total session exposure for LIGHTs: 32.0 hrs 20.0 mins 0 secs
+        Filter Blue:	 17 frames, Exposure time: 17.0 mins 0 secs
+        Filter Green:	 18 frames, Exposure time: 18.0 mins 0 secs
+        Filter Ha:	 51 frames, Exposure time: 8.0 hrs 30.0 mins 0 secs
+        Filter OIII:	 54 frames, Exposure time: 9.0 hrs 0 secs
+        Filter Red:	 30 frames, Exposure time: 30.0 mins 0 secs
+        Filter SII:	 51 frames, Exposure time: 8.0 hrs 30.0 mins 0 secs
+
+        Total session exposure for LIGHTs:	 27.0 hrs 5.0 mins 0 secs
 
         FLATS:
-        Filter Blue: 50 frames, Exposure time: 9 secs
-        Filter Green: 50 frames, Exposure time: 8 secs
-        Filter Ha: 50 frames, Exposure time: 23 secs
-        Filter Lum: 50 frames, Exposure time: 2 secs
-        Filter OIII: 50 frames, Exposure time: 25 secs
-        Filter Red: 50 frames, Exposure time: 6 secs
-        Filter SII: 50 frames, Exposure time: 28 secs
 
-        BIAS with GAIN 0: 100 frames, Exposure time: 0 secs
-        BIAS with GAIN 100: 100 frames, Exposure time: 0 secs
-        DARK with GAIN 0: 50 frames, Exposure time: 50.0 mins 0 secs
-        DARK with GAIN 100: 50 frames, Exposure time: 8.0 hrs 20.0 mins 0 secs
+        Filter Blue:	 50 frames, Exposure time: 9 secs
+        Filter Green:	 50 frames, Exposure time: 8 secs
+        Filter Ha:	 50 frames, Exposure time: 24 secs
+        Filter Lum:	 50 frames, Exposure time: 2 secs
+        Filter OIII:	 50 frames, Exposure time: 26 secs
+        Filter Red:	 50 frames, Exposure time: 6 secs
+        Filter SII:	 50 frames, Exposure time: 29 secs
 
-        Used existing Bortle of 4.0 and SQM of 20.52 mag/arc-seconds^2 for lat 52.25, lon -0.12 from sites.csv.
+        BIAS with GAIN 0:	 100 frames, Exposure time: 0 secs
+        BIAS with GAIN 100:	 100 frames, Exposure time: 0 secs
+        DARK with GAIN 0:	 50 frames, Exposure time: 50.0 mins 0 secs
+        DARK with GAIN 100:	 50 frames, Exposure time: 8.0 hrs 20.0 mins 0 secs
+
+        Retrieved Bortle 4.0 and SQM 20.52 for lat 52.25, lon -0.12 from sites.csv
 
         Completed sky quality extraction
 
-        Data exported to Rosette Nebula (Caldwell 49) acquisition.csv
+        Processing summary exported to Sadr Region session summary.txt
 
-The contents of Rosette Nebula (Caldwell 49) acquisition.csv are given below:
+        AstroBin data exported to Sadr Region acquisition.csv
+
+
+The exported files can be found in the local directory
+
+The contents of Sadir region acquisition.csv for the above run are given below:
 
 | date       | filter | number | duration | binning | gain | sensorCooling | fNumber | darks | flats | flatDarks | bias | bortle | meanSqm | meanFwhm | temperature |
 |------------|--------|--------|----------|---------|------|---------------|---------|-------|-------|-----------|------|--------|---------|----------|-------------|
-| 2022-01-12 | 4663   | 15     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | 0.62        |
-| 2022-01-13 | 4663   | 34     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.26       |
-| 2022-01-13 | 4844   | 4      | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.38       |
-| 2022-01-14 | 4663   | 14     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -1.04       |
-| 2022-01-14 | 4844   | 23     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -1.7        |
-| 2022-01-15 | 4844   | 4      | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -2          |
-| 2022-01-18 | 4844   | 1      | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.8        |
-| 2022-01-19 | 4844   | 2      | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.55       |
-| 2022-01-20 | 4844   | 11     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.5        |
-| 2022-01-21 | 4844   | 17     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.72       |
-| 2022-01-22 | 4844   | 13     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | -0.56       |
-| 2022-01-27 | 4752   | 22     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | 1.78        |
-| 2022-01-28 | 4752   | 3      | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | 0.67        |
-| 2022-01-29 | 4752   | 20     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | 3.74        |
-| 2022-01-30 | 4752   | 11     | 600      | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4      | 20.52   |    2.3   | 1.79        |
+| 2023-07-06 | 4663   | 15     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.37     | 10.24       |
+| 2023-07-07 | 4663   | 24     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.38     | 11.51       |
+| 2023-07-08 | 4663   | 12     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.39     | 17.47       |
+| 2023-07-08 | 4844   | 5      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.46     | 16.82       |
+| 2023-07-29 | 4844   | 2      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.4      | 13.4        |
+| 2023-07-30 | 4844   | 1      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.4      | 12.8        |
+| 2023-08-06 | 4844   | 8      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.41     | 11.41       |
+| 2023-08-07 | 4844   | 22     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.43     | 9.53        |
+| 2023-08-08 | 4752   | 7      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.38     | 9.56        |
+| 2023-08-08 | 4844   | 5      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.45     | 9.86        |
+| 2023-08-09 | 4752   | 16     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.44     | 9.55        |
+| 2023-08-09 | 4844   | 8      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.43     | 15.78       |
+| 2023-08-10 | 4752   | 28     | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.35     | 15.51       |
+| 2023-08-11 | 4637   | 17     | 60.0     | 1       | 0    | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.37     | 16.86       |
+| 2023-08-11 | 4643   | 18     | 60.0     | 1       | 0    | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.34     | 16.77       |
+| 2023-08-11 | 4752   | 3      | 600.0    | 1       | 100  | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.32     | 17.0        |
+| 2023-08-11 | 4649   | 30     | 60.0     | 1       | 0    | -10           | 5.4     | 50    | 50    | 0         | 100  | 4.0    | 20.52   | 2.4      | 16.94       |
 
-In the case above there was no HFR value in the image file paths so the value HFR = 1.6 was obtained from the 'default.csv' file. It can also be seen that a 4-digit code is presented for each filter used. This code is AstroBin's representation of the filter and is described below.
+In the case above the HFR value was taken from the file name. It can also be seen that a 4-digit code is presented for each filter used. This code is AstroBin's representation of the filter and is described below.
 
 The results in the 'acquisition.csv' file can be copied and pasted into AstroBin's import CSV dialogue.
 
-## Additional Information
+The contents of the Sadr Region session summary.txt file are shown below:
 
-### Night Time Imaging N Astronomy ([N.I.N.A](https://nighttime-imaging.eu/))
 
-This code was primarily developed for use with FITS/XIFS files generated by the astro-imaging package [N.I.N.A](https://nighttime-imaging.eu/), but with the use of the 'default.csv' file the code should be able to handle images generated by other packages. We will continue to use header files generated by N.I.N.A to help explain the code operation.
+        Observation session Summary:
 
-A FITS header file generated by N.I.N.A is quite rich in information, an example is given below:
+        LIGHTS:
 
-| Key       | Value                                                                                         |
-|-----------|-----------------------------------------------------------------------------------------------|
-| SIMPLE    | True                                                                                          |
-| BITPIX    | 16                                                                                            |
-| NAXIS     | 2                                                                                             |
-| NAXIS1    | 9576                                                                                          |
-| NAXIS2    | 6388                                                                                          |
-| EXTEND    | True                                                                                          |
-| EXTEND    | True                                                                                          |
-| BZERO     | 32768                                                                                         |
-| IMAGETYP  | LIGHT                                                                                         |
-| EXPOSURE  | 600.0                                                                                         |
-| EXPTIME   | 600.0                                                                                         |
-| DATE-LOC  | 2023-08-10T23:30:56.722                                                                       |
-| DATE-OBS  | 2023-08-10T22:30:56.722                                                                       |
-| XBINNING  | 1                                                                                             |
-| YBINNING  | 1                                                                                             |
-| GAIN      | 100                                                                                           |
-| OFFSET    | 10                                                                                            |
-| EGAIN     | 0.246658                                                                                      |
-| XPIXSZ    | 3.76                                                                                          |
-| YPIXSZ    | 3.76                                                                                          |
-| INSTRUME  | ZWO ASI6200MM Pro                                                                             |
-| SET-TEMP  | -10.0                                                                                         |
-| CCD-TEMP  | -10.0                                                                                         |
-| USBLIMIT  | 40                                                                                            |
-| TELESCOP  | NP101is                                                                                       |
-| FOCALLEN  | 540.0                                                                                         |
-| FOCRAITO  | 5.4                                                                                           |
-| RA        | 303.912892                                                                                    |
-| DEC       | 39.248115                                                                                     |
-| CENTALT   | 76.64632                                                                                      |
-| CENTAZ    | 163.49302                                                                                     |
-| AIRMASS   | 1.027669                                                                                      |
-| PIERSIDE  | West                                                                                          |
-| SITEELEV  | 58.8                                                                                          |
-| SITELAT   | 52.248472                                                                                     |
-| SITELONG  | -0.123167                                                                                     |
-| FWHEEL    | Starlight Xpress Fil                                                                          |
-| FILTER    | OIII                                                                                          |
-| OBJECT    | Gamma Cygni Nebula                                                                            |
-| OBJCTRA   | 20 15 39                                                                                      |
-| OBJCTDEC  | +39 14 56                                                                                     |
-| OBJCTROT  | 0.0                                                                                           |
-| FOCNAME   | FocusLynx Focuser 1                                                                           |
-| FOCPOS    | 13196.0                                                                                       |
-| FOCUSPOS  | 13196.0                                                                                       |
-| FOCUSSZ   | 1.31                                                                                          |
-| FOCTEMP   | 18.4                                                                                          |
-| FOCUSTEM  | 18.4                                                                                          |
-| CLOUDCVR  | 0.0                                                                                           |
-| HUMIDITY  | 0.0                                                                                           |
-| PRESSURE  | 0.0                                                                                           |
-| AMBTEMP   | 0.0                                                                                           |
-| WINDDIR   | 0.0                                                                                           |
-| WINDSPD   | 0.0                                                                                           |
-| ROWORDER  | TOP-DOWN                                                                                      |
-| EQUINOX   | 2000.0                                                                                        |
-| SWCREATE  | N.I.N.A. 2.3.0.2001                                                                           |
-| file_path | /mnt/HDD_8TB/Preselected/Sadr Region/OIII/11th August/Sadr Region_Date_2023-08-10_Time_23-30-56_Filter_OIII_Exposure_600.00s_HFR_1.67pxs_FrameNo_0005.fits |
-| DEWPOINT  | (empty value)                                                                                 |
+        Filter Blue:	 17 frames, Exposure time: 17.0 mins 0 secs
+        Filter Green:	 18 frames, Exposure time: 18.0 mins 0 secs
+        Filter Ha:	 51 frames, Exposure time: 8.0 hrs 30.0 mins 0 secs
+        Filter OIII:	 54 frames, Exposure time: 9.0 hrs 0 secs
+        Filter Red:	 30 frames, Exposure time: 30.0 mins 0 secs
+        Filter SII:	 51 frames, Exposure time: 8.0 hrs 30.0 mins 0 secs
 
-A subset of these header file parameters are used in the code:
+        Total session exposure for LIGHTs:	 27.0 hrs 5.0 mins 0 secs
 
-| Key      | Description                                                      |
-|----------|------------------------------------------------------------------|
-| EXPOSURE | image exposure time in seconds                                   |
-| DATE-LOC | date at image location, YYYY-MM-DD is extracted                  |
-| XBINNING | binning level used                                               |
-| GAIN     | camera gain                                                      |
-| XPIXSZ   | pixel size in microns                                            |
-| CCD-TEMP | ccd temperature in degrees centigrade                            |
-| FOCALLEN | telescope focal length in mm                                     |
-| FOCRATIO | telescope focal ratio                                            |
-| SITELAT  | latitude of observation site                                     |
-| SITELONG | longitude of observation site                                    |
-| FILTER   | filter used                                                      |
-| OBJECT   | target name (sequence name in N.I.N.A)                           |
-| FOCTEMP  | ambient temperature in degrees centigrade as measured by the focuser |
+        FLATS:
+
+        Filter Blue:	 50 frames, Exposure time: 9 secs
+        Filter Green:	 50 frames, Exposure time: 8 secs
+        Filter Ha:	 50 frames, Exposure time: 24 secs
+        Filter Lum:	 50 frames, Exposure time: 2 secs
+        Filter OIII:	 50 frames, Exposure time: 26 secs
+        Filter Red:	 50 frames, Exposure time: 6 secs
+        Filter SII:	 50 frames, Exposure time: 29 secs
+
+        BIAS with GAIN 0:	 100 frames, Exposure time: 0 secs
+        BIAS with GAIN 100:	 100 frames, Exposure time: 0 secs
+        DARK with GAIN 0:	 50 frames, Exposure time: 50.0 mins 0 secs
+        DARK with GAIN 100:	 50 frames, Exposure time: 8.0 hrs 20.0 mins 0 secs
+
+
+# Additional Information
 
 ## AstroBin's Acquisition CSV File Format
 
@@ -327,7 +309,7 @@ The `sites.csv` file contains the Bortle and SQM values for a given latitude and
 The program reads the `sites.csv` data into a dataframe. As the code loops through the data it obtains the site location's latitude and longitude from the header for the image under consideration. If the location matches a location in the sites dataframe it uses the values of Bortle and SQM for those coordinates.
 If there is no match it obtains the values of Bortle and SQM from an external website. The code will then add the new site information to the sites.csv file. Site data also can be entered manually into the sites.csv. If no matching site data is found in the `sites.csv` and the external site cannot be accessed the Bortle and SQM values are set equal to zero.
 
-## secret.csv and accessing sky quality data
+## Accessing sky quality data and secret.csv 
 
 The artificial_brightness of the sky at a given latitude and longitude is obtained from the excellent web resource https://www.lightpollutionmap.info. This can be by done by visiting the website and entering the latitude and longitude of the observation site and obtaining the parameters Bortle and SQM. These parameters can then be entered into the sites.csv file. It can also be done programmatically by the code. To do this you need to place an API_KEY and API_ENDPOINT for the service in the secret.csv file. The only API_ENDPOINT supported currently is https://www.lightpollutionmap.info/QueryRaster/. You will have to apply to Jurij Stare, the website owner, for an API key. Jurij's email address is starej@t-2.net. The approach I suggest is: donate a small amount
 
@@ -373,6 +355,79 @@ The use of a `default.csv` file enables the code to run with headers produced by
 | HFR      | 1.6       | Half-flux radius in pixels                       |
 
 This table contains all elements required by AstroBin, however, if your headers are not reporting the basics, for instance EXPOSURE, you cannot make good use of this code as all your images will be reported with the same EXPOSURE time to AstroBin. All elements are included for completeness. To use this correctly inspect a header using your package of choice and enter suitable values to represent your imaging setup that are missing from your header files. For imagers that use color cameras with filters that are not reported in the header files, enter the filter code for your filter in the `filters.csv`, along with the AstroBin filter code. Then enter the same name in the `defaults.csv`. This will ensure that your filter code is applied to all your images when uploaded to AstroBin.
+
+## Night Time Imaging N' Astronomy ([N.I.N.A](https://nighttime-imaging.eu/))
+
+This code was primarily developed for use with FITS/XIFS files generated by the astro-imaging package [N.I.N.A](https://nighttime-imaging.eu/), but with the use of the 'default.csv' file the code should be able to handle images generated by other packages. 
+
+A FITS header file generated by N.I.N.A is quite rich in information, an example is given below:
+
+| Keyword  | Value                        | Description                                         |
+|----------|------------------------------|-----------------------------------------------------|
+| SIMPLE   | T                            | C# FITS                                             |
+| BITPIX   | 16                           |                                                     |
+| NAXIS    | 2                            | Dimensionality                                      |
+| NAXIS1   | 9576                         |                                                     |
+| NAXIS2   | 6388                         |                                                     |
+| EXTEND   | T                            | Extensions are permitted                            |
+| BZERO    | 32768                        |                                                     |
+| IMAGETYP | 'LIGHT'                      | Type of exposure                                    |
+| EXPOSURE | 600.0                        | [s] Exposure duration                               |
+| EXPTIME  | 600.0                        | [s] Exposure duration                               |
+| DATE-LOC | '2023-07-06T02:08:40.138'    | Time of observation (local)                         |
+| DATE-OBS | '2023-07-06T01:08:40.138'    | Time of observation (UTC)                           |
+| XBINNING | 1                            | X axis binning factor                               |
+| YBINNING | 1                            | Y axis binning factor                               |
+| GAIN     | 100                          | Sensor gain                                         |
+| OFFSET   | 10                           | Sensor gain offset                                  |
+| EGAIN    | 0.246657639741898            | [e-/ADU] Electrons per A/D unit                     |
+| XPIXSZ   | 3.76                         | [um] Pixel X axis size                              |
+| YPIXSZ   | 3.76                         | [um] Pixel Y axis size                              |
+| INSTRUME | 'ZWO ASI6200MM Pro'          | Imaging instrument name                             |
+| SET-TEMP | -10.0                        | [degC] CCD temperature setpoint                     |
+| CCD-TEMP | -10.0                        | [degC] CCD temperature                              |
+| USBLIMIT | 40                           | Camera-specific USB setting                         |
+| TELESCOP | 'NP101is'                    | Name of telescope                                   |
+| FOCALLEN | 540.0                        | [mm] Focal length                                   |
+| FOCRATE  | 5.4                          | Focal ratio                                         |
+| RA       | 303.913346707174             | [deg] RA of telescope                               |
+| DEC      | 39.2491028344059             | [deg] Declination of telescope                      |
+| CENTALT  | 77.062                       | [deg] Altitude of telescope                         |
+| CENTAZ   | 177.15272                    | [deg] Azimuth of telescope                          |
+| AIRMASS  | 1.0259339100251              | Airmass at frame center (Gueymard 1993)             |
+| PIERSIDE | 'West'                       | Telescope pointing state                            |
+| SITEELEV | 56.8                         | [m] Observation site elevation                      |
+| SITELAT  | 52.2484722222222             | [deg] Observation site latitude                     |
+| SITELONG | -0.123111111111111           | [deg] Observation site longitude                    |
+| FWHEEL   | 'Starlight Xpress Fil'       | Filter Wheel name                                   |
+| FILTER   | 'Ha'                         | Active filter name                                  |
+| OBJECT   | 'Gamma Cygni Nebula'         | Name of the object of interest                      |
+| OBJCTRA  | '20 15 39'                   | [H M S] RA of imaged object                         |
+| OBJCTDEC | '+39 14 56'                  | [D M S] Declination of imaged object                |
+| OBJCTROT | 180.06                       | [deg] planned rotation of imaged object             |
+| FOCNAME  | 'FocusLynx Focuser 1'        | Focusing equipment name                             |
+| FOCPOS   | 13123                        | [step] Focuser position                             |
+| FOCUSPOS | 13123                        | [step] Focuser position                             |
+| FOCUSSZ  | 1.31                         | [um] Focuser step size                              |
+| FOCTEMP  | 9.4                          | [degC] Focuser temperature                          |
+| FOCUSTEM | 9.4                          | [degC] Focuser temperature                          |
+| CLOUDCVR | 16.0                         | [percent] Cloud cover                               |
+| DEWPOINT | 8.61426437858062             | [degC] Dew point                                    |
+| HUMIDITY | 85.0                         | [percent] Relative humidity                         |
+| PRESSURE | 1015.0                       | [hPa] Air pressure                                  |
+| AMBTEMP  | 10.99                        | [degC] Ambient air temperature                      |
+| WINDDIR  | 240.0                        | [deg] Wind direction: 0=N, 180=S, 90=E, 270=W       |
+| WINDSPD  | 12.456                       | [kph] Wind speed                                    |
+| ROWORDER | 'TOP-DOWN'                   | FITS Image Orientation                              |
+| EQUINOX  | 2000.0                       | Equinox of celestial coordinate system              |
+| SWCREATE | 'N.I.N.A. 3.0.0.1028'        | Software that created this file                     |
+
+
+## [Pixinsight](https://pixinsight.com/) XISF headers
+
+FIT file headers are accessed in the code using Astropy's FITS header library.
+To access XISF headers functions were developed based upon the [Pixinsight XISF header specification](https://pixinsight.com/doc/docs/XISF-1.0-spec/XISF-1.0-spec.html#xisf_header).
+
 
 ## Contributing to AstroImage Processing Script
 
