@@ -161,3 +161,5 @@ cython_debug/
 
 # Development files 
 /dev/
+/SandPit/
+/release/
