@@ -1038,13 +1038,13 @@ def main():
     astroBin_df = create_astrobin_output(aggregated_df, params['filters'])
 
     # Export summary to a text file
-    summary_txt = os.path.basename(directory_paths[0]) + " session summary.txt"
+    summary_txt = os.path.basename(directory_paths[0]) + "session_summary.txt"
     with open(summary_txt, 'w') as file:
         file.write(summary)
     print(f"\nProcessing summary exported to {summary_txt}")
 
     # Export final data to CSV
-    output_csv = os.path.basename(directory_paths[0]) + " acquisition.csv"
+    output_csv = os.path.basename(directory_paths[0]) + "acquisition.csv"
     astroBin_df.to_csv(output_csv, index=False)
     print(f"\nAstroBin data exported to {output_csv}")
     
