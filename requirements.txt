@@ -1,0 +1,5 @@
+pandas
+configobj
+astropy
+requests
+geopy
