@@ -2,7 +2,7 @@ import os
 from utils import initialise_logging,summarize_session, Headers,Processing,Sites,utils_version
 import sys
 
-version = '1.3.0'
+version = '1.3.2'
 # Changes:
 # v1.1.2 9th January 2024
 # Allows initialisation of the script without a config.ini file and no directory paths
@@ -51,7 +51,13 @@ version = '1.3.0'
 # New utils.py script v1.2.10
 # Saved as version 1.2.10 
 # 12th February 2024
-# Release version 1.3.0 
+# Release version 1.3.0
+# 26th February 2024
+# Release version 1.3.1
+# Modified debugging file dumps, so they occour after the data has been processed not all at the the end
+# New utils.py script v1.3.1
+# Release version 1.3.2
+# New utils.py script v1.3.2
 
 #see utils.py for change details
 
@@ -130,22 +136,11 @@ def main() -> None:
             sys.exit(1)
         logger.info(f"Processing directory: {directory}")
 
+
     # Extract FITS headers
     logger.info("Reading FITS headers...")
     print('\nReading FITS headers...\n')
     headers_df,basic_headers = headers.process_directories(directory_paths)
-    
-    # Get location information
-    logger.info("Getting site data...")
-    site_modified_headers_df = sites.get_site_data(headers_df)
-  
-    # Aggregate parameters
-    logger.info("Aggregating parameters...")
-    aggregated_df = processing.aggregate_parameters(site_modified_headers_df)
-
-    # Create and print summary of observation session
-    logger.info("Summarizing session...")
-    summary_txt = summarize_session(aggregated_df, logger,headers.number_of_images_processed)
 
     if DEBUG:
         #if debug is True save dataframes
@@ -155,18 +150,32 @@ def main() -> None:
         #save modied headers to a csv file
         headers_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_headers.csv"
         headers_df.to_csv(headers_csv, index=False)
-        #save site modified headers to a csv file
-        modified_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_modified.csv"
-        site_modified_headers_df.to_csv(modified_csv, index=False)
-        #save the aggregated data to a csv file
-        aggregated_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_aggregated.csv"
-        aggregated_df.to_csv(aggregated_csv, index=False)
         logger.info("Debugging is True.")
         logger.info(f"basic headers exported to {basic_headers_csv}")
         logger.info(f"headers exported to {headers_csv}")
+    
+    # Get location information
+    logger.info("Getting site data...")
+    site_modified_headers_df = sites.get_site_data(headers_df)
+
+    if DEBUG:
+        modified_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_modified.csv"
+        site_modified_headers_df.to_csv(modified_csv, index=False)
         logger.info(f"site modified headers exported to {modified_csv}")
+  
+    # Aggregate parameters
+    logger.info("Aggregating parameters...")
+    aggregated_df = processing.aggregate_parameters(site_modified_headers_df)
+    
+    if DEBUG:
+        #save the aggregated data to a csv file
+        aggregated_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_aggregated.csv"
+        aggregated_df.to_csv(aggregated_csv, index=False)
         logger.info(f"aggregated headers exported to {aggregated_csv}")
 
+    # Create and print summary of observation session
+    logger.info("Summarizing session...")
+    summary_txt = summarize_session(aggregated_df, logger,headers.number_of_images_processed)
 
     # Transform data for AstroBin output
     logger.info("Creating AstroBin output...")

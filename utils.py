@@ -76,7 +76,7 @@ warnings.filterwarnings("ignore")
 # Corrected observation session count it was not corrected before
 # had to leave date obs as date times to get the correct date, 
 # calculate session statistics in aggergate_parameters then convert to date after session calculations
-# Minor formatting chnages on summary report to align +ve and -ve temperature values
+# Minor formatting changes on summary report to align +ve and -ve temperature values
 # 7th February 2024
 # Version 1.2.5 
 # added check for session date calculations, any errors will be logged and code reporst session date information not available
@@ -89,9 +89,23 @@ warnings.filterwarnings("ignore")
 # Version 1.2.10
 # Ensured that only master flats and master darks that have the same filters and exposures as the light frames are used
 # 12th February 2024
-# Release version 1.3.0 
+# Release version 1.3.0
+# 27th February 2024
+# Version 1.3.1
+# Modified debugging file dumps, so they occour after the data has been processed not all at the the end
+# 29th February 2024
+# Version 1.3.2
+# Code added to handle FOCUSER and SITENAME SGP-PRO keywords
+# Code added to deal with situation where keyword pairs conflict with each other
+# 'EXPTIME' and 'EXPOSURE' in the same data frame
+# 'LAT-OBS' and 'SITELAT' in the same data frame
+# Handles mutiple MasterFlat frames for same filter
+# Correctly total MasterFlat frames in summary and astrobin output
+# Ensure all calibration frame locations are set equal to the nearest light frame location
+# Stops calibration frames generating their own site location
 
-utils_version = '1.3.0'
+
+utils_version = '1.3.2'
 
 def initialise_logging(log_filename: str) -> logging.Logger:
         """
@@ -325,7 +339,7 @@ def equipment_used(group: pd.DataFrame, df: pd.DataFrame, logger: logging.Logger
 
     equipment_format = " {:<20}: {}\n"
     equipment = "\n Equipment used:\n"
-    eq_group = group[group['imageType'] == 'LIGHT']
+    eq_group = group
 
     # Add equipment details
     if eq_group['telescope'].iloc[0] != 'None':
@@ -380,20 +394,24 @@ def target_details(group: pd.DataFrame, logger: logging.Logger) -> str:
     logger.info("Determining target details")
 
     target_format = " {:<6} {}"
-    target_group = group[group['imageType'] == 'LIGHT']
+    #target_group = group[group['imageType'] == 'LIGHT']
+
+    logger.info(f"Target group: {group}")
 
 
     # Get the 'target' column values
-    arr = pd.Series(target_group['target'].astype(str))
+    arr = pd.Series(group['target'].astype(str))
+    logger.info(f"Target values: {arr}")
 
     # Normalize the strings: lowercase, remove underscores, and collapse multiple spaces to a single space
     normalized = arr.str.replace('_', ' ').str.lower().str.split().str.join(' ')
-
+    logger.info(f"Normalized targets: {normalized}")
     # Create a mapping from normalized strings to original strings
     mapping = pd.Series(arr.values, index=normalized).to_dict()
-
+    logger.info(f"Mapping: {mapping}")
     # Get unique values
     unique_values = pd.Series(list(mapping.keys())).unique()
+    logger.info(f"Unique values: {unique_values}")
 
     # Map unique values back to original strings
     targets = [mapping[val] for val in unique_values]
@@ -413,6 +431,7 @@ def target_details(group: pd.DataFrame, logger: logging.Logger) -> str:
     else:
         target = target_format.format("Target:", targets[0])
         logger.info(f"Target: {target}")
+
 
     return target
 
@@ -505,7 +524,7 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
     logger.info("GENERATING OBSERVATION SESSION SUMMARY")
 
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    imagetype_order = ['LIGHT', 'FLAT', 'DARKFLAT', 'BIAS', 'DARK', 'MASTERFLAT', 'MASTERDARKFLAT', 'MASTERBIAS', 'MASTERDARK']
+    imagetype_order = ['LIGHT', 'FLAT', 'MASTERFLAT', 'DARKFLAT', 'BIAS', 'DARK', 'MASTERDARKFLAT', 'MASTERBIAS', 'MASTERDARK']
 
     summary_parts = [f"\n Observation session summary\n Generated {current_time}\n"]
 
@@ -513,25 +532,33 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
     logger.info("")
 
     for site, group in df.groupby('site'):
-        logger.info(f"Processing site: {site}")
-        logger.info("")
-        summary_parts.append(target_details(group,logger))
-        logger.info("Added target details to summary")
-        logger.info("")
-        summary_parts.append(site_details(group, site,logger))
-        logger.info("Added site details to summary")
-        logger.info("")
+        target_group = group[group['imageType'] == 'LIGHT']
+        if not target_group.empty:
+            logger.info(f"Processing site: {site}")
+            logger.info("")
+            summary_parts.append(target_details(target_group ,logger))
+            logger.info("Added target details to summary")
+            logger.info("")
+            target = site_details(target_group , site,logger)
+            if target != 'No target':
+                summary_parts.append(target)
+                logger.info("Added site details to summary")
+                logger.info("")
 
-        summary_parts.append(equipment_used(group,df,logger))
-        logger.info("Added equipment used to summary")
-        logger.info("")
+            summary_parts.append(equipment_used(target_group ,df,logger))
+            logger.info("Added equipment used to summary")
+            logger.info("")
 
-        summary_parts.append(observation_period(group,logger))
-        logger.info("Added observation period to summary")
-        logger.info("")
+            summary_parts.append(observation_period(target_group ,logger))
+            logger.info("Added observation period to summary")
+            logger.info("")
 
 
+    
+    #for site, group in df.groupby('site'):
+  
         for imagetype in imagetype_order:
+            
             if imagetype in group['imageType'].unique():
                 logger.info(f"Processing image type: {imagetype}")
                 summary, total_exposure_time = process_image_type(group, imagetype,logger)
@@ -546,10 +573,11 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
                 logger.info("*"*200)
                 logger.info("")
 
-
+    
         summary_parts.append(get_number_of_images(number_of_images,logger))
         logger.info("Added number of images to summary")
         logger.info("")
+    
 
     logger.info("Observation session summary generated")
 
@@ -1321,10 +1349,33 @@ class Headers(Configuration):
         self.logger.info(f"Number of images processed: {self.number_of_images_processed}")
         self.logger.info('Set HFR, IMSCALE and FWHM values')
 
+        # Set All calibration frame lat/long to the same as the first light frame nearest to the calibration frame Lat/Long
+        # this stops calibration frames being associated with the wrong site
+        headers = self.modify_lat_long(headers)
+        self.logger.info("")
+        self.logger.info('Set All calibration frame lat/long to the same as the first light frame nearest to the calibration frame Lat/Long')   
+
+
         #clean up object column
         headers = self.clean_object_column(headers)
 
         return headers
+
+    def modify_lat_long(self,df):
+        # Create a DataFrame of 'LIGHT' rows
+        light_df = df[df['IMAGETYP'] == 'LIGHT']
+
+        # For each row in df, find the 'LIGHT' row that is closest in terms of 'SITELAT' and 'SITELONG'
+        for i, row in df[df['IMAGETYP'] != 'LIGHT'].iterrows():
+            # Calculate the Euclidean distance between the 'SITELAT' and 'SITELONG' of this row and each 'LIGHT' row
+            distances = np.sqrt((light_df['SITELAT'] - row['SITELAT'])**2 + (light_df['SITELONG'] - row['SITELONG'])**2)
+            # Find the index of the 'LIGHT' row with the smallest distance
+            closest_light_index = distances.idxmin()
+            # Set the 'SITELAT' and 'SITELONG' of this row to the 'SITELAT' and 'SITELONG' of the closest 'LIGHT' row
+            df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
+            df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
+
+        return df
 
     def reduce_headers(self, hdr: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1351,16 +1402,25 @@ class Headers(Configuration):
             self.logger.info('Dealt with CREATOR key')
 
         # Deal with EXPTIME key instead of EXPOSURE
-        if 'EXPTIME' in hdr:
+        if 'EXPTIME' in hdr and hdr['EXPTIME'] != 'No Data':
             hdr['EXPOSURE'] = hdr['EXPTIME']
             self.logger.info('Dealt with EXPTIME key')
         #masters use LAT-OBS and LONG-OBS forSITELAT and SITELONG'
         # so convert here if they exist
-        if 'LAT-OBS' in hdr:
+        if 'LAT-OBS' in hdr and hdr['LAT-OBS'] != 'No Data':
             hdr['SITELAT'] = hdr['LAT-OBS']
             hdr['SITELONG'] = hdr['LONG-OBS']
             hdr['FWHM'] = 0
             self.logger.info('Dealt with Masters LAT-OBS and LONG-OBS')
+        # Deal with SITENAME key
+        if 'SITENAME' in hdr:
+            hdr['SITE'] = hdr['SITENAME']
+            self.logger.info('Dealt with SITENAME key')
+
+        # Deal with FOCUSER key
+        if 'FOCUSER' in hdr:
+            hdr['FOCNAME'] = hdr['FOCUSER']
+            self.logger.info('Dealt with FOCUSER key')
 
         # Remove space and capitalise hdr['IMAGETYP']
 
@@ -1368,8 +1428,9 @@ class Headers(Configuration):
         self.logger.info('Removed space and capitalised IMAGETYP')
 
         # Set file name to self.updated_header
-        hdr['FILENAME'] = self.header_filename
-        self.logger.info('Set file name to self.header_filename')
+        if 'FILENAME' not in hdr:
+            hdr['FILENAME'] = self.header_filename
+            self.logger.info('Set file name to self.header_filename')
 
         # Add 'number' key-value pair to self.updated_header
         hdr['NUMBER'] = self.number
@@ -1403,6 +1464,9 @@ class Headers(Configuration):
 
         # Initialize an empty DataFrame to store the final results
         final_df = pd.DataFrame()
+
+        # Remove rows where IMAGETYP is 'masterlight'
+        headers_df= headers_df[headers_df['IMAGETYP'] != 'masterlight']
 
         # Extract the base filenames
         headers_df['base_filename'] = headers_df['FILENAME'].str.extract(r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)')[0]
@@ -1438,6 +1502,7 @@ class Headers(Configuration):
                     final_df = pd.concat([final_df, pd.DataFrame(default_row).transpose()])
 
         final_df.drop(columns=['base_filename'], inplace=True)
+        
 
         return final_df.reset_index(drop=True)
 
@@ -1445,10 +1510,11 @@ class Headers(Configuration):
         # Convert 'IMAGETYP' to lower case for case insensitive comparison
         df['IMAGETYP'] = df['IMAGETYP'].str.lower()
 
-        # Remove any masterdark frames that dont hav ethe same duration as the light frames
-        #identify the duration times in the light frames#identify the filters used in the light frames
+        # Remove any masterdark frames that dont have the same duration as the light frames
+        #identify the duration times in the light frames
+        #identify the filters used in the light frames
         light_exposures = df[df['IMAGETYP']=='light']['EXPOSURE'].unique()
-                #identify the filters used in the flat frames and master flat frames
+        #identify the filters used in the flat frames and master flat frames
         dark_exposures = df[df['IMAGETYP'].str.contains('dark')]['EXPOSURE'].unique()
         
         #remove from df any dark frames or master dark frames that do not have a corresponding exposure in light_filters
@@ -1496,6 +1562,17 @@ class Headers(Configuration):
         for filter_value in master_flat_filters:
             df = df[~((df['IMAGETYP'] == 'flat') & (df['FILTER'] == filter_value))]
 
+        # If there is more than one master flat frame with the same filter then:
+        # 1. Add the ['NUMBER'] values and make ['NUMBER'].
+        # 2. Drop all entries except one, it does not matter which one is kept
+        master_flat_df = df[df['IMAGETYP'].str.contains('master') & df['IMAGETYP'].str.contains('flat')]
+        master_flat_df['NUMBER'] = master_flat_df.groupby('FILTER')['NUMBER'].transform('sum')
+        master_flat_df = master_flat_df.drop_duplicates('FILTER')
+
+        # Replace the old master flat frames with the new ones
+        df = df[~(df['IMAGETYP'].str.contains('master') & df['IMAGETYP'].str.contains('flat'))]
+        df = pd.concat([df, master_flat_df])
+            
         return df
 
     def check_and_convert_data_types(self, d: Dict[str, Any]) -> Dict[str, Any]:
@@ -1528,8 +1605,12 @@ class Headers(Configuration):
             Returns:
             - The decimal representation of the DMS string.
             """
-            degrees, minutes, seconds = map(float, dms_str.split())
-            return degrees + minutes / 60 + seconds / 3600
+            try:
+                degrees, minutes, seconds = map(float, dms_str.split())
+                return degrees + minutes / 60 + seconds / 3600
+            except Exception:
+                return dms_str
+    
 
         # Define data types for each key
         data_types = {
@@ -1601,6 +1682,9 @@ class Headers(Configuration):
         self.logger.info("")
         self.logger.info("CHECKING CAMERA GAINS")
 
+        # Replace 'No Data' with 0 in 'Gain' column
+        hdrs['GAIN'] = hdrs['GAIN'].replace('No Data', 0)
+
         unique_df = hdrs[hdrs['GAIN'] >= 0][['INSTRUME', 'GAIN', 'EGAIN']].drop_duplicates()
         self.logger.info('Created DataFrame of unique rows from headers')
 
@@ -1660,20 +1744,22 @@ class Headers(Configuration):
         hfr_set = self.config['defaults']['HFR']
 
         for index, row in df.iterrows():
-            # Calculate and update HFR, IMSCALE, and FWHM values
-            file_path = row['FILENAME']
-            hfr_match = re.search(r'HFR_([0-9.]+)', file_path)
-            hfr = float(hfr_match.group(1)) if hfr_match and float(hfr_match.group(1)) > 0 else float(hfr_set)
-            focal_length = float(row['FOCALLEN'])
-            pixel_size = float(row['XPIXSZ'])
-            imscale = float(row['XPIXSZ']) / float(row['FOCALLEN']) * 206.265
-            fwhm = hfr * imscale*2 if hfr >= 0.0 else 0.0
+            if row['IMAGETYP'] == 'LIGHT':
+            
+                # Calculate and update HFR, IMSCALE, and FWHM values
+                file_path = row['FILENAME']
+                hfr_match = re.search(r'HFR_([0-9.]+)', file_path)
+                hfr = float(hfr_match.group(1)) if hfr_match and float(hfr_match.group(1)) > 0 else float(hfr_set)
+                focal_length = float(row['FOCALLEN'])
+                pixel_size = float(row['XPIXSZ'])
+                imscale = float(row['XPIXSZ']) / float(row['FOCALLEN']) * 206.265
+                fwhm = hfr * imscale*2 if hfr >= 0.0 else 0.0
 
-            df.at[index, 'HFR'] = round(hfr,2)
-            df.at[index, 'IMSCALE'] = round(imscale,2)
-            df.at[index, 'FWHM'] = round(fwhm,2)
+                df.at[index, 'HFR'] = round(hfr,2)
+                df.at[index, 'IMSCALE'] = round(imscale,2)
+                df.at[index, 'FWHM'] = round(fwhm,2)
 
-            #self.logger.info(f"Updated row {index}: Focal length: {focal_length} Pixel size : {pixel_size} um HFR: {hfr:.2f}, IMSCALE: {imscale:.2f}, FWHM: {fwhm:.2f}")
+                #self.logger.info(f"Updated row {index}: Focal length: {focal_length} Pixel size : {pixel_size} um HFR: {hfr:.2f}, IMSCALE: {imscale:.2f}, FWHM: {fwhm:.2f}")
 
         self.logger.info(f"Completed HFR extraction: mean HFR: {df['HFR'].mean():.2f}, Image Scale: {imscale:.2f}, mean FWHM: {df['FWHM'].mean():.2f}")
         print(f"\nCompleted HFR extraction. Processed {index+1} images")
@@ -1796,7 +1882,9 @@ class Processing():
 
             self.logger.info("Created a date column to date")    
             # Split the DataFrame into two
-            df_master = df[df['imagetyp'].str.contains('MASTER')]
+            #df_master = df[df['imagetyp'].str.contains('MASTER')]
+            # Split the DataFrame into two
+            df_master = df[df['imagetyp'].str.contains('MASTER') & ~df['imagetyp'].str.contains('MASTERLIGHT')]
             df_not_master = df[~df['imagetyp'].str.contains('MASTER')]
             self.logger.info("Split DataFrame into 'MASTER' and not 'MASTER'")
 
@@ -1842,6 +1930,9 @@ class Processing():
                 **agg_dict
             ).reset_index()
             self.logger.info("Aggregated none 'MASTER' DataFrame")
+
+            # Set 'imscale' in df_master to 'imscale' in df_not_master_df
+            df_master['imscale'] = df_not_master['imscale']
 
             # Concatenate the results
             aggregated_df = pd.concat([df_master, agg_not_master_df])
@@ -1986,7 +2077,7 @@ class Processing():
             self.logger.warning("No code found for filter: %s. Enter a valid code in filters.csv file or input the code in the astrobin upload file.", filter_value)
             return f"{filter_value}: no code found"
 
-    def create_astrobin_output(self, df: pd.DataFrame) -> pd.DataFrame:
+    def create_astrobin_output1(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Creates an output DataFrame for AstroBin based on the input DataFrame.
 
@@ -2009,10 +2100,10 @@ class Processing():
         if not df.empty:
             self.logger.info("Data found, processing")
 
-            grouped = df.groupby('site')
+            #grouped = df.groupby('site')
 
-            for site, group in grouped:
-                self.logger.info("Processing site: %s", site)
+            for group in df:
+                #self.logger.info("Processing site: %s", site)
 
                 light_group = group[group['imageType'] == 'LIGHT'].copy()  # Create a copy of the DataFrame
                 self.logger.info("Created 'LIGHT' DataFrame copy")
@@ -2050,7 +2141,7 @@ class Processing():
                     sub_group = group[group['imageType'] == imagetyp]
                     if not sub_group.empty:
                         light_group[column] += sub_group['number'].iloc[0]
-                        self.logger.info("Updated 'light_group' column with 'MASTER' frame number: %s", column)
+                        self.logger.info("Updated 'light_group' column with 'MASTER' frame number: %s", sub_group['number'].iloc[0])
 
 
                 if light_group['filter'].dtype == 'object':
@@ -2087,6 +2178,103 @@ class Processing():
         else:
             self.logger.info("No data found")
             return pd.DataFrame()
+
+
+    def create_astrobin_output(self, df: pd.DataFrame) -> pd.DataFrame:
+            """
+            Creates an output DataFrame for AstroBin based on the input DataFrame.
+
+            This function groups the input DataFrame by 'site', processes each 'imagetyp' and updates the corresponding column in
+            the 'light_group' DataFrame, processes 'MASTER' frames, maps 'filter' names to their codes, orders the columns, and
+            returns the processed DataFrame. If the input DataFrame is empty, it returns an empty DataFrame.
+
+            Args:
+            - df: The input DataFrame to process.
+
+            Returns:
+            - The processed DataFrame for AstroBin.
+            """
+            self.logger.info("")
+            self.logger.info("STARTING ASTROBIN OUTPUT CREATION")
+
+
+            filters_dict = self.headers.config['filters']
+            light_group_agg= pd.DataFrame()
+            if not df.empty:
+                self.logger.info("Data found, processing")
+
+                light_group = df[df['imageType'] == 'LIGHT'].copy()  # Create a copy of the DataFrame
+                self.logger.info("Created 'LIGHT' DataFrame copy")
+
+                # Map 'imagetyp' to column name in 'light_group'
+                imagetyp_to_column = {
+                    'BIAS': 'bias',
+                    'DARK': 'darks',
+                    'DARKFLAT': 'flatDarks',
+                    'FLAT': 'flats'
+                }
+
+                # Process each 'imagetyp' and update the corresponding column in 'light_group'
+                for imagetyp, column in imagetyp_to_column.items():
+                    self.logger.info("")
+                    self.logger.info("Processing 'image type': %s", imagetyp)
+
+                    sub_group = df[df['imageType'] == imagetyp]
+                    #self.logger.info("Sub-group size: %d", len(sub_group))
+
+                    light_group[column] = light_group.apply(lambda x: sub_group[sub_group['gain' if imagetyp != 'FLAT' else 'filter'] == x['gain' if imagetyp != 'FLAT' else 'filter']]['number'].sum(), axis=1)
+                    self.logger.info("Updated 'light_group' column: %s", column)
+
+                master_imagetyp_to_column = {
+                    'MASTERBIAS': 'bias',
+                    'MASTERDARK': 'darks',
+                    'MASTERDARKFLAT': 'flatDarks',
+                    'MASTERFLAT': 'flats'
+                }
+
+                for imagetyp, column in master_imagetyp_to_column.items():
+                    self.logger.info("")
+                    self.logger.info("Processing 'MASTER' frames for 'image type': %s", imagetyp)
+
+                    sub_group = df[df['imageType'] == imagetyp]
+                    if not sub_group.empty:
+                        #light_group[column] += sub_group['number'].iloc[0]
+                        light_group[column] = light_group.apply(lambda x: sub_group[sub_group['gain' if imagetyp != 'MASTERFLAT' else 'filter'] == x['gain' if imagetyp != 'MASTERFLAT' else 'filter']]['number'].sum(), axis=1)
+                        self.logger.info("Updated 'light_group' column with 'MASTER' frame number: %s", column)
+
+
+                if light_group['filter'].dtype == 'object':
+                    # Save original filters for logging
+                    original_filters = light_group['filter'].unique()
+                    light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x, x))
+
+                    # Prepare log message
+                    self.logger.info("")
+                    self.logger.info("Mapped 'filter' names to codes:")
+                    for original_filter in original_filters:
+                        mapped_code = filters_dict.get(original_filter, original_filter)
+                        self.logger.info(f"{original_filter} -> {mapped_code}")
+
+                    #self.logger.info(log_message)
+
+                    column_order = ['date', 'filter', 'number', 'duration', 'binning', 'gain',
+                                    'sensorCooling', 'fNumber', 'darks', 'flats', 'flatDarks', 'bias', 'bortle',
+                                    'meanSqm', 'meanFwhm', 'temperature']
+                    self.logger.info("")
+                    self.logger.info("Ordered columns to meet AstroBin requirements")
+                    light_group.rename(columns={'date-obs': 'date'}, inplace=True)
+                    self.logger.info("")
+                    self.logger.info("COMPLETED ASTROBIN OUTPUT CREATION")
+
+                    light_group_agg =pd.concat([light_group_agg,light_group[column_order]])
+
+
+
+                return light_group_agg
+
+            else:
+                self.logger.info("No data found")
+                return pd.DataFrame()
 
 class Sites():
     def __init__(self, headers: Dict[str, str], logger: logging.Logger):
