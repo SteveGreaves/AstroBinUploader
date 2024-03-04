@@ -2,7 +2,7 @@ import os
 from utils import initialise_logging,summarize_session, Headers,Processing,Sites,utils_version
 import sys
 
-version = '1.3.2'
+version = '1.3.3'
 # Changes:
 # v1.1.2 9th January 2024
 # Allows initialisation of the script without a config.ini file and no directory paths
@@ -58,6 +58,9 @@ version = '1.3.2'
 # New utils.py script v1.3.1
 # Release version 1.3.2
 # New utils.py script v1.3.2
+# 4th March 2024
+# Release version 1.3.3
+# New utils.py script v1.3.3
 
 #see utils.py for change details
 

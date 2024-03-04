@@ -55,7 +55,7 @@ warnings.filterwarnings("ignore")
 # and the WBPP directory is used which contains other images that are post processed. Some do not contain header information
 # Corrected error where code was adding the same header to the aggregating data frame twice ( big miss!!)
 # 29th January 2024
-# Changed logic in site.process_new_location 
+# Changed logic in site.process_new_location
 #       1.0 Ensure that if all geocoding fails, location_string is set to config['defaults']['SITE'] in all cases
 #       2.0 Dont geocode again if location_string is already set to config['defaults']['SITE']
 #       3.0 If bortle and sqm returned are 0,0 then set them to config['defaults']['BORTLE'] and config['defaults']['SQM']
@@ -72,16 +72,16 @@ warnings.filterwarnings("ignore")
 # 31st January 2024
 # Corrected observation session count
 # 6th February 2024
-# Version 1.2.4 
+# Version 1.2.4
 # Corrected observation session count it was not corrected before
-# had to leave date obs as date times to get the correct date, 
+# had to leave date obs as date times to get the correct date,
 # calculate session statistics in aggergate_parameters then convert to date after session calculations
 # Minor formatting changes on summary report to align +ve and -ve temperature values
 # 7th February 2024
-# Version 1.2.5 
+# Version 1.2.5
 # added check for session date calculations, any errors will be logged and code reporst session date information not available
 # 7th February 2024
-# Version 1.2.8 
+# Version 1.2.8
 # dump data frames to .csv file for analysis
 # 8th February 2024
 # Corrected error in the function observation period where ['name'][0] was used instead of ['name'].iloc[0]
@@ -103,9 +103,12 @@ warnings.filterwarnings("ignore")
 # Correctly total MasterFlat frames in summary and astrobin output
 # Ensure all calibration frame locations are set equal to the nearest light frame location
 # Stops calibration frames generating their own site location
+# Version 1.3.3
+# 4th March 2024
+# Corrected error in aggregate_parameters where if no MASTER frames are present the code would fail
 
 
-utils_version = '1.3.2'
+utils_version = '1.3.3'
 
 def initialise_logging(log_filename: str) -> logging.Logger:
         """
@@ -317,7 +320,7 @@ def site_details(group: pd.DataFrame, site: str, logger: logging.Logger) -> str:
     logger.info(f"Latitude: {group['sitelat'].iloc[0]}\u00B0, Longitude: {group['sitelong'].iloc[0]}\u00B0")
     details += f"\tBortle scale: {group['bortle'].iloc[0]}, SQM: {group['meanSqm'].iloc[0]} mag/arcsec\u00B2\n"
     logger.info(f"Bortle scale: {group['bortle'].iloc[0]}, SQM: {group['meanSqm'].iloc[0]} mag/arcsec\u00B2")
-   
+
     return details
 
 def equipment_used(group: pd.DataFrame, df: pd.DataFrame, logger: logging.Logger) -> str:
@@ -396,16 +399,16 @@ def target_details(group: pd.DataFrame, logger: logging.Logger) -> str:
     target_format = " {:<6} {}"
     #target_group = group[group['imageType'] == 'LIGHT']
 
-    logger.info(f"Target group: {group}")
+    #logger.info(f"Target group: {group}")
 
 
     # Get the 'target' column values
     arr = pd.Series(group['target'].astype(str))
-    logger.info(f"Target values: {arr}")
+    logger.info(f"Target value: {arr[0]}")
 
     # Normalize the strings: lowercase, remove underscores, and collapse multiple spaces to a single space
     normalized = arr.str.replace('_', ' ').str.lower().str.split().str.join(' ')
-    logger.info(f"Normalized targets: {normalized}")
+    #logger.info(f"Normalized targets: {normalized}")
     # Create a mapping from normalized strings to original strings
     mapping = pd.Series(arr.values, index=normalized).to_dict()
     logger.info(f"Mapping: {mapping}")
@@ -449,7 +452,7 @@ def observation_period(group_in: pd.DataFrame, logger: logging.Logger) -> str:
         logger.info("Output:  Session date information not available")
         period += " Session date information not available\n"
         return period
-    
+
     if (group['imageType'] != 'LIGHT').all():
         logger.info("No LIGHT frames available")
         period += " No LIGHT frames available\n"
@@ -464,7 +467,7 @@ def observation_period(group_in: pd.DataFrame, logger: logging.Logger) -> str:
         end_date = light_group['end_date'].iloc[0]
         num_days = light_group['num_days'].iloc[0]
         sessions= light_group['sessions'].iloc[0]
-    
+
 
         if start_date == error_date or end_date == error_date or num_days == 0 or sessions == 0:
             period += " Session date information not available\n"
@@ -497,13 +500,13 @@ def observation_period(group_in: pd.DataFrame, logger: logging.Logger) -> str:
         logger.info("No LIGHT frames available")
 
         return "\nObservation period: \n\tNo LIGHT frames available\n"
-    
+
 def get_number_of_images(number_of_images: int, logger: logging.Logger) -> str:
     logger.info("Determining number of images processed")
     images = number_of_images
     logger.info(f"Total number of images processed: {images}")
     number_of_images_format = " {:<25}: {}\n"
-    
+
     return number_of_images_format.format("Total number of images processed",images)
 
 def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images: int) -> str:
@@ -554,11 +557,11 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
             logger.info("")
 
 
-    
+
     #for site, group in df.groupby('site'):
-  
+
         for imagetype in imagetype_order:
-            
+
             if imagetype in group['imageType'].unique():
                 logger.info(f"Processing image type: {imagetype}")
                 summary, total_exposure_time = process_image_type(group, imagetype,logger)
@@ -573,11 +576,11 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
                 logger.info("*"*200)
                 logger.info("")
 
-    
+
         summary_parts.append(get_number_of_images(number_of_images,logger))
         logger.info("Added number of images to summary")
         logger.info("")
-    
+
 
     logger.info("Observation session summary generated")
 
@@ -1353,7 +1356,7 @@ class Headers(Configuration):
         # this stops calibration frames being associated with the wrong site
         headers = self.modify_lat_long(headers)
         self.logger.info("")
-        self.logger.info('Set All calibration frame lat/long to the same as the first light frame nearest to the calibration frame Lat/Long')   
+        self.logger.info('Set All calibration frame lat/long to the same as the first light frame nearest to the calibration frame Lat/Long')
 
 
         #clean up object column
@@ -1502,7 +1505,7 @@ class Headers(Configuration):
                     final_df = pd.concat([final_df, pd.DataFrame(default_row).transpose()])
 
         final_df.drop(columns=['base_filename'], inplace=True)
-        
+
 
         return final_df.reset_index(drop=True)
 
@@ -1516,7 +1519,7 @@ class Headers(Configuration):
         light_exposures = df[df['IMAGETYP']=='light']['EXPOSURE'].unique()
         #identify the filters used in the flat frames and master flat frames
         dark_exposures = df[df['IMAGETYP'].str.contains('dark')]['EXPOSURE'].unique()
-        
+
         #remove from df any dark frames or master dark frames that do not have a corresponding exposure in light_filters
         for exposure_value in dark_exposures:
             if exposure_value not in light_exposures :
@@ -1572,7 +1575,7 @@ class Headers(Configuration):
         # Replace the old master flat frames with the new ones
         df = df[~(df['IMAGETYP'].str.contains('master') & df['IMAGETYP'].str.contains('flat'))]
         df = pd.concat([df, master_flat_df])
-            
+
         return df
 
     def check_and_convert_data_types(self, d: Dict[str, Any]) -> Dict[str, Any]:
@@ -1610,7 +1613,7 @@ class Headers(Configuration):
                 return degrees + minutes / 60 + seconds / 3600
             except Exception:
                 return dms_str
-    
+
 
         # Define data types for each key
         data_types = {
@@ -1745,7 +1748,7 @@ class Headers(Configuration):
 
         for index, row in df.iterrows():
             if row['IMAGETYP'] == 'LIGHT':
-            
+
                 # Calculate and update HFR, IMSCALE, and FWHM values
                 file_path = row['FILENAME']
                 hfr_match = re.search(r'HFR_([0-9.]+)', file_path)
@@ -1799,7 +1802,7 @@ class Processing():
             except ValueError:
                 return value
 
-        
+
         self.logger.info("")
         self.logger.info("STARTING PARAMETER AGGREGATION")
 
@@ -1817,8 +1820,8 @@ class Processing():
             #dates = [datetime.fromisoformat(s) for s in date_strings]
 
             #date_strings=[] #set empty dates for testing
-            #sessions=min # set 
-          
+            #sessions=min # set
+
             try:
                 dates = [parse(s) for s in date_strings]
                 self.logger.info(f"Parsed {len(dates)} dates.")
@@ -1875,16 +1878,17 @@ class Processing():
             self.logger.info(f"Start date: {df['start_date'].iloc[0]}, End date: {df['end_date'].iloc[0]}, Number of days: {df['num_days'].iloc[0]}")
 
 
-    
+
             #df['date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%d')
             df['date-obs'] = pd.to_datetime(df['date-obs']).dt.date
 
 
-            self.logger.info("Created a date column to date")    
+            self.logger.info("Created a date column to date")
             # Split the DataFrame into two
             #df_master = df[df['imagetyp'].str.contains('MASTER')]
             # Split the DataFrame into two
             df_master = df[df['imagetyp'].str.contains('MASTER') & ~df['imagetyp'].str.contains('MASTERLIGHT')]
+
             df_not_master = df[~df['imagetyp'].str.contains('MASTER')]
             self.logger.info("Split DataFrame into 'MASTER' and not 'MASTER'")
 
@@ -1931,12 +1935,15 @@ class Processing():
             ).reset_index()
             self.logger.info("Aggregated none 'MASTER' DataFrame")
 
+            if df_master.empty:
+                self.logger.info("No MASTER data found")
+                aggregated_df = agg_not_master_df
+            else:
             # Set 'imscale' in df_master to 'imscale' in df_not_master_df
-            df_master['imscale'] = df_not_master['imscale']
-
+                df_master['imscale'] = df_not_master['imscale']
             # Concatenate the results
-            aggregated_df = pd.concat([df_master, agg_not_master_df])
-            self.logger.info("Concatenated MASTER and non-MASTER results")
+                aggregated_df = pd.concat([df_master, agg_not_master_df])
+                self.logger.info("Concatenated MASTER and non-MASTER results")
 
             # Renaming columns for clarity
             aggregated_df.rename(columns={
@@ -1961,6 +1968,7 @@ class Processing():
 
             #force numeric data types
             # Change data type of 'sensorCooling' column to float
+
             aggregated_df['sensorCooling'] = aggregated_df['sensorCooling'].astype(float).round().astype(int)
             aggregated_df['temp_min'] = aggregated_df['temp_min'].astype(float)
             aggregated_df['temp_max'] = aggregated_df['temp_max'].astype(float)
@@ -2006,7 +2014,7 @@ class Processing():
             except TypeError as e:
                 self.logger.error(f"Error converting num_days to int: {e}")
                 aggregated_df['num_days'] = 0
-           
+
 
             # Round and cast values to correct type
             dp = 2  # number of decimal places
@@ -2032,12 +2040,16 @@ class Processing():
             self.logger.info("No data found")
 
         aggregated_df['rotator'] = aggregated_df['rotator'].apply(replace_numeric_with_none)
-        self.logger.info(f"aggregated_df keys: {aggregated_df.keys()}")
-        self.logger.info(f"session: {aggregated_df['sessions'].iloc[0]}")
+        self.logger.info(f"aggregated_df keys")
+        for key in aggregated_df.keys():
+            self.logger.info(f"aggregated_df key: {key}")
+        self.logger.info("")
+        self.logger.info(f"Number of observation session: {aggregated_df['sessions'].iloc[0]}")
         self.logger.info(f"start_date: {aggregated_df['start_date'].iloc[0]}")
         self.logger.info(f"end_date: {aggregated_df['end_date'].iloc[0]}")
         self.logger.info(f"num_days: {aggregated_df['num_days'].iloc[0]}")
-         
+        self.logger.info("")
+
 
         return pd.DataFrame(aggregated_df)
 
@@ -2320,7 +2332,7 @@ class Sites():
         Returns:
         - pd.DataFrame or None: A DataFrame containing the matching rows, or None if no match is found.
         """
-        
+
 
         target_lat, target_long = lat_long_pair
         #matching_rows = sites_df[(round(sites_df['latitude'], n) == round(target_lat, n))
@@ -2333,7 +2345,7 @@ class Sites():
             #self.logger.info(f"Site name: {matching_rows.index[0]} Site latitude: {matching_rows['latitude'][0]} Site longitude: {matching_rows['longitude'][0]}")
             return matching_rows
         else:
-   
+
             return None
 
     def get_bortle_sqm(self, lat: float, lon: float, api_key: str, api_endpoint: str) -> Tuple[int, float, Optional[str], bool, bool]:
@@ -2471,11 +2483,11 @@ class Sites():
         """
 
         #is_new = existing_sites.empty or existing_sites[(round(existing_sites['latitude'], 1) == round(lat_long_pair[0],1)) & (round(existing_sites['longitude'], 1) == round(lat_long_pair[1],1))].empty
-    
+
         is_new = existing_sites.empty or \
-            existing_sites[(np.ceil(existing_sites['latitude'] * 10) / 10 == np.ceil(lat_long_pair[0] * 10) / 10) & 
+            existing_sites[(np.ceil(existing_sites['latitude'] * 10) / 10 == np.ceil(lat_long_pair[0] * 10) / 10) &
                            (np.ceil(existing_sites['longitude'] * 10) / 10 == np.ceil(lat_long_pair[1] * 10) / 10)].empty
-    
+
         return is_new
 
     def process_new_location1(self, lat_long_pair: Tuple[float, float], api_key: str, api_endpoint: str) -> Tuple[str, int, float]:
@@ -2622,8 +2634,8 @@ class Sites():
             sys.exit("Error: No images found in session. Terminating program.")
 
         est = self.existing_sites_df.transpose()
-  
-  
+
+
         self.logger.info("")
         self.logger.info("CHECKING IF LOCATIONS ARE NEW")
         for index, row in df.iterrows():
@@ -2632,12 +2644,12 @@ class Sites():
 
             lat_long_pair = (round(row['SITELAT'], self.headers.dp), round(row['SITELONG'], self.headers.dp))
             r_lat_long_pair = (np.ceil(row['SITELAT'] * 10) / 10, np.ceil(row['SITELONG'] * 10) / 10)
-  
+
             #self.logger.info("Lat/Long pair: %s", lat_long_pair)
             #self.logger.info("")
             #if not est.empty:
-            
-                
+
+
                 #self.logger.info(f"Unrounded")
                 #self.logger.info(f"Config[sites][latitude] : {est['latitude'].values},  header latitude:  {lat_long_pair[0]}")
                 #self.logger.info(f"Config[sites][longitude]: {est['longitude'].values}, header longitude: {lat_long_pair[1]}")
@@ -2650,14 +2662,14 @@ class Sites():
                 #self.logger.info(f"Using Ceiling")
                 #self.logger.info(f"Config[sites][latitude] : {np.ceil(est['latitude'].values * 10) / 10},  header latitude:  {np.ceil(lat_long_pair[0] * 10) / 10}")
                 #self.logger.info(f"Config[sites][longitude]: {np.ceil(est['longitude'].values * 10) / 10}, header longitude: {np.ceil(lat_long_pair[1] * 10) / 10}")
-     
-            #self.logger.info(f"Is data frame empty: {est.empty}") 
+
+            #self.logger.info(f"Is data frame empty: {est.empty}")
             #self.logger.info("")
 
             if self.is_new_location(est, lat_long_pair):
-            
+
                 self.logger.info(f"New location not in default[sites] found: {lat_long_pair}")
-          
+
                 lat_long_pair_return,location_str, bortle, sqm = self.process_new_location(lat_long_pair, api_key, api_endpoint)
 
                 if lat_long_pair_return != lat_long_pair:
@@ -2676,7 +2688,7 @@ class Sites():
                 self.logger.info("")
                 site = location_str
             else:
-                
+
                 if r_lat_long_pair not in seen_locations:
 
                     seen_locations[r_lat_long_pair] = r_lat_long_pair
@@ -2697,7 +2709,7 @@ class Sites():
                 bortle = self.location_info['bortle'].iloc[0]
                 sqm = self.location_info['sqm'].iloc[0]
                 #self.logger.info("Existing location found: Site: %s, Bortle: %s, SQM: %s", site, bortle, sqm)
-            
+
             df.at[index, 'BORTLE'] = bortle
             df.at[index, 'SQM'] = sqm
             df.at[index, 'SITE'] = site
