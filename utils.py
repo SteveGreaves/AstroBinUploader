@@ -106,9 +106,34 @@ warnings.filterwarnings("ignore")
 # Version 1.3.3
 # 4th March 2024
 # Corrected error in aggregate_parameters where if no MASTER frames are present the code would fail
+# Version 1.3.4
+# 5th March 2024
+# Corrected utf-8 encoding errror with logging
+# Reset index on group in summerize session such that group['target'].iloc[0] returns the correct value
+# formatted time output seconds are now shown to 2dp
+# Version 1.3.6
+# 16 June 2024
+# No changes, but matches the version number of the main package
+# Version 1.3.7
+# allows the scipt to be called from an image directory and process the images in that directory but allows for calibration directories to be passed as arguments
+# eg AstroBinUploadv1_3_7.py "." /home/user/images/calibration
+# All output files are written to the current image directory under a directory called "AstroBinUpload"
+# version 1.3.8
+# 28th September 2024
+# Allows the processing of LIGHTFRAMES as well as LIGHT frames
+# Modification in the process headers function to allow the processing of LIGHTFRAMES as well as LIGHT frames
+# version 1.3.9
+# 28th September 2024
+# Allows the processing of LIGHTFRAMES and Light Frames as well as LIGHT frames
+# Modification in the process headers function to allow the processing of LIGHTFRAMES Light Frames as well as LIGHT frames
+# version 1.3.10
+# 29th September 2024
+# Deals with the case where a fractional part of a second is present in some date-obs keyword but not in others
+# Deals with the case where the filter names in teh light frames have trailing white spaces.
 
 
-utils_version = '1.3.3'
+
+utils_version = '1.3.10'
 
 def initialise_logging(log_filename: str) -> logging.Logger:
         """
@@ -139,7 +164,7 @@ def initialise_logging(log_filename: str) -> logging.Logger:
         logger.setLevel(logging.INFO)
 
         #handler = logging.StreamHandler()
-        handler = logging.FileHandler(log_filename)  # Log to a file
+        handler = logging.FileHandler(log_filename, encoding='utf-8')  # Log to a file
         formatter = logging.Formatter('%(asctime)s - %(name)s - Line: %(lineno)d - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
 
@@ -163,12 +188,12 @@ def format_seconds_to_hms(seconds: int) -> str:
 
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
+    secs = float(seconds % 60)
 
     return "{:>6} {:>6} {:>6}".format(
         f"{hours} hrs" if hours > 0 else "",
         f"{minutes} mins" if hours > 0 or minutes > 0 else "",
-        f"{secs} secs"
+        f"{secs:.2f} secs"
     )
 
 def seconds_to_hms(seconds: int) ->str:
@@ -186,8 +211,8 @@ def seconds_to_hms(seconds: int) ->str:
     """
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    return f"{hours} hrs {minutes} mins {secs} secs"
+    secs = float(seconds % 60)
+    return f"{hours} hrs {minutes} mins {secs:.2f} secs"
 
 def process_image_type(group: pd.DataFrame, imagetype: str, logger: logging.Logger) -> Tuple[str, float]:
     """
@@ -211,7 +236,7 @@ def process_image_type(group: pd.DataFrame, imagetype: str, logger: logging.Logg
     #total_exposure_time_all_targets = 0  # Add this line
     total_exposure_time = 0  # Add this lin
 
-    if imagetype == 'LIGHT':
+    if imagetype in ['LIGHT', 'LIGHTFRAME']:
         format_string = " {:<8} {:<8}  {:<8} {:<12} {:<12} {:<12} {:<12} {:<15} {:<15}"
         lines.append(f" {imagetype}S:")
 
@@ -397,7 +422,7 @@ def target_details(group: pd.DataFrame, logger: logging.Logger) -> str:
     logger.info("Determining target details")
 
     target_format = " {:<6} {}"
-    #target_group = group[group['imageType'] == 'LIGHT']
+    #target_group = group[group['imageType'] == 'LIGHT'].reset_index(drop=True)
 
     #logger.info(f"Target group: {group}")
 
@@ -535,7 +560,7 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
     logger.info("")
 
     for site, group in df.groupby('site'):
-        target_group = group[group['imageType'] == 'LIGHT']
+        target_group = group[group['imageType'] == 'LIGHT'].reset_index(drop=True)
         if not target_group.empty:
             logger.info(f"Processing site: {site}")
             logger.info("")
@@ -1192,6 +1217,11 @@ class Headers(Configuration):
                     # Remove frame from self.header
                     hdr= {}
                     return
+                # Modified 28th September 2024
+                # Modify 'IMAGETYP' if it's 'LIGHTFRAME' or "'LIGHTFRAME'"
+                if hdr['IMAGETYP'] in ['LIGHTFRAME', "'LIGHTFRAME'","'Light Frame'",'Light Frame']:
+                    hdr['IMAGETYP'] = 'LIGHT'
+                    self.logger.info("IMAGETYP modified from 'LIGHTFRAME' to 'LIGHT'")
 
                 if self.number > 1:
                     self.logger.info('Image is a master, number of images used to create master: %s', self.number)
@@ -1306,8 +1336,10 @@ class Headers(Configuration):
 
         # Check self.headers contains LIGHT frames
         if headers.empty or 'LIGHT' not in headers['IMAGETYP'].values:
-            self.logger.info("No LIGHT frames found in headers")
+            self.logger.info("No LIGHT 2 frames found in headers")
+            print("\nNo LIGHT frames found in headers")
             self.logger.info("Exiting program")
+            print("\nExiting program")
             sys.exit(0)
 
 
@@ -1364,7 +1396,7 @@ class Headers(Configuration):
 
         return headers
 
-    def modify_lat_long(self,df):
+    def modify_lat_long_very_old(self,df):
         # Create a DataFrame of 'LIGHT' rows
         light_df = df[df['IMAGETYP'] == 'LIGHT']
 
@@ -1375,6 +1407,55 @@ class Headers(Configuration):
             # Find the index of the 'LIGHT' row with the smallest distance
             closest_light_index = distances.idxmin()
             # Set the 'SITELAT' and 'SITELONG' of this row to the 'SITELAT' and 'SITELONG' of the closest 'LIGHT' row
+            df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
+            df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
+
+        return df
+
+    def modify_lat_long_old(self, df):
+        # Create a DataFrame of 'LIGHT' rows
+        light_df = df[df['IMAGETYP'] == 'LIGHT']
+        self.logger.info("")
+
+        # For each row in df, find the 'LIGHT' row that is closest in terms of 'SITELAT' and 'SITELONG'
+        for i, row in df[df['IMAGETYP'] != 'LIGHT'].iterrows():
+            # Print the current row's 'SITELAT' and 'SITELONG' values
+            print(f"Current row SITELAT: {row['SITELAT']}, SITELONG: {row['SITELONG']}")
+
+            # Calculate the Euclidean distance between the 'SITELAT' and 'SITELONG' of this row and each 'LIGHT' row
+            try:
+                distances = np.sqrt((light_df['SITELAT'] - row['SITELAT'])**2 + (light_df['SITELONG'] - row['SITELONG'])**2)
+            except TypeError as e:
+                # Print the light_df 'SITELAT' and 'SITELONG' values to identify the problematic values
+                print(f"Error calculating distances. light_df SITELAT: {light_df['SITELAT'].tolist()}, SITELONG: {light_df['SITELONG'].tolist()}")
+                raise e
+
+            # Find the index of the 'LIGHT' row with the smallest distance
+            closest_light_index = distances.idxmin()
+            # Set the 'SITELAT' and 'SITELONG' of this row to the 'SITELAT' and 'SITELONG' of the closest 'LIGHT' row
+            df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
+            df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
+
+        return df
+    
+    def modify_lat_long(self, df):
+        # Ensure SITELAT and SITELONG in light_df are floats
+        light_df = df[df['IMAGETYP'] == 'LIGHT'].copy()
+        light_df['SITELAT'] = light_df['SITELAT'].astype(float)
+        light_df['SITELONG'] = light_df['SITELONG'].astype(float)
+
+        for i, row in df[df['IMAGETYP'] != 'LIGHT'].iterrows():
+            # Ensure current row's SITELAT and SITELONG are floats
+            sitelat = float(row['SITELAT'])
+            sitelong = float(row['SITELONG'])
+
+            # Calculate Euclidean distance
+            distances = np.sqrt(np.square(light_df['SITELAT'] - sitelat) + np.square(light_df['SITELONG'] - sitelong))
+            
+            # Find the index of the 'LIGHT' row with the smallest distance
+            closest_light_index = distances.idxmin()
+            
+            # Update the 'SITELAT' and 'SITELONG' of the current row
             df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
             df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
 
@@ -1415,6 +1496,12 @@ class Headers(Configuration):
             hdr['SITELONG'] = hdr['LONG-OBS']
             hdr['FWHM'] = 0
             self.logger.info('Dealt with Masters LAT-OBS and LONG-OBS')
+        
+        #Deal with fractional seconds in DATE-OBS
+        #added 29th September 2024
+        #if 'DATE-OBS' in hdr:
+        #    hdr['DATE-OBS'] = hdr['DATE-OBS'].split('.')[0]
+
         # Deal with SITENAME key
         if 'SITENAME' in hdr:
             hdr['SITE'] = hdr['SITENAME']
@@ -1458,7 +1545,6 @@ class Headers(Configuration):
         self.logger.info('Created sub dictionary of wanted keys from hdr')
 
         return self.check_and_convert_data_types(hdr)
-
     def filter_and_remove_duplicates(self, headers_df: pd.DataFrame) -> pd.DataFrame:
 
         # Filter for IMAGETYP = 'LIGHT'
@@ -1598,7 +1684,7 @@ class Headers(Configuration):
         self.logger.info("")
         self.logger.info('CHECKING AND CONVERTING DATA TYPES')
 
-        def dms_to_decimal(dms_str: str) -> float:
+        def dms_to_decimal_old(dms_str: str) -> float:
             """
             Converts a string in DMS format to decimal format.
 
@@ -1613,6 +1699,40 @@ class Headers(Configuration):
                 return degrees + minutes / 60 + seconds / 3600
             except Exception:
                 return dms_str
+            
+
+        def dms_to_decimal(dms_str: str) -> float:
+            """
+            Converts a string in DMS format to decimal format. Supports both '0d7m0.000s W' format
+            and the original space-separated format.
+
+            Args:
+            - dms_str: The string in DMS format to convert.
+
+            Returns:
+            - The decimal representation of the DMS string.
+            """
+            try:
+                # Check if the string is in '0d7m0.000s W' format
+                if 'd' in dms_str and 'm' in dms_str and 's' in dms_str:
+                    parts = dms_str.replace('d', ' ').replace('m', ' ').replace('s', ' ').split()
+                    degrees, minutes, seconds = float(parts[0]), float(parts[1]), float(parts[2])
+                    direction = parts[3] if len(parts) == 4 else ''
+                else:
+                    # Original functionality for space-separated format
+                    degrees, minutes, seconds = map(float, dms_str.split())
+                    direction = ''
+
+                decimal = degrees + minutes / 60 + seconds / 3600
+
+                # Adjusting for West (W) and South (S) coordinates to be negative
+                if direction in ['W', 'S']:
+                    decimal = -decimal
+
+                return decimal
+            except Exception as e:
+                print(f"Error converting DMS to decimal: {e}")
+                return 0.0  # Consider returning a default value or re-raise the exception
 
 
         # Define data types for each key
@@ -1647,9 +1767,15 @@ class Headers(Configuration):
 
                 if isinstance(v, str):
                     v = v.replace('"', '').strip("'")  # Remove double quotes and strip outer single quotes
-                    #if key == 'DATE-OBS':
-                    #    v = v[:v.rfind('.') + self.dp]  # Truncate to microsecond precision before parsing
-                    #    v = datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%f").strftime('%Y-%m-%d')  # Convert string to datetime YYYY-MM-DD
+                    if key == 'DATE-OBS':
+                        # Check if fractional seconds exist (i.e., there's a '.' in the time part)
+                        if '.' in v:
+                            # Remove everything after the decimal point (i.e., fractional seconds)
+                            v = v.split('.')[0]                        
+                        # Convert the string to the correct datetime format (without microseconds)
+                        v = datetime.strptime(v, "%Y-%m-%dT%H:%M:%S").strftime('%Y-%m-%dT%H:%M:%S')
+
+
                     if key in ['SITELAT', 'SITELONG'] and ' ' in v:  # DMS format
                         v = dms_to_decimal(v)
 
@@ -1877,8 +2003,17 @@ class Processing():
             self.logger.info("Calculated start and end dates and number of days")
             self.logger.info(f"Start date: {df['start_date'].iloc[0]}, End date: {df['end_date'].iloc[0]}, Number of days: {df['num_days'].iloc[0]}")
 
-
-
+             # First, try parsing with the most common format (without milliseconds)
+            try:
+                df['date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S')
+            except ValueError:
+                # If the first attempt fails, try parsing with milliseconds
+                try:
+                    df['date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S.%f')
+                except ValueError:
+                    # As a last resort, use infer_datetime_format to handle varied formats
+                    df['date-obs'] = pd.to_datetime(df['date-obs'], infer_datetime_format=True, errors='coerce')
+   
             #df['date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%d')
             df['date-obs'] = pd.to_datetime(df['date-obs']).dt.date
 
@@ -2089,109 +2224,6 @@ class Processing():
             self.logger.warning("No code found for filter: %s. Enter a valid code in filters.csv file or input the code in the astrobin upload file.", filter_value)
             return f"{filter_value}: no code found"
 
-    def create_astrobin_output1(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Creates an output DataFrame for AstroBin based on the input DataFrame.
-
-        This function groups the input DataFrame by 'site', processes each 'imagetyp' and updates the corresponding column in
-        the 'light_group' DataFrame, processes 'MASTER' frames, maps 'filter' names to their codes, orders the columns, and
-        returns the processed DataFrame. If the input DataFrame is empty, it returns an empty DataFrame.
-
-        Args:
-        - df: The input DataFrame to process.
-
-        Returns:
-        - The processed DataFrame for AstroBin.
-        """
-        self.logger.info("")
-        self.logger.info("STARTING ASTROBIN OUTPUT CREATION")
-
-
-        filters_dict = self.headers.config['filters']
-        light_group_agg= pd.DataFrame()
-        if not df.empty:
-            self.logger.info("Data found, processing")
-
-            #grouped = df.groupby('site')
-
-            for group in df:
-                #self.logger.info("Processing site: %s", site)
-
-                light_group = group[group['imageType'] == 'LIGHT'].copy()  # Create a copy of the DataFrame
-                self.logger.info("Created 'LIGHT' DataFrame copy")
-
-                # Map 'imagetyp' to column name in 'light_group'
-                imagetyp_to_column = {
-                    'BIAS': 'bias',
-                    'DARK': 'darks',
-                    'DARKFLAT': 'flatDarks',
-                    'FLAT': 'flats'
-                }
-
-                # Process each 'imagetyp' and update the corresponding column in 'light_group'
-                for imagetyp, column in imagetyp_to_column.items():
-                    self.logger.info("")
-                    self.logger.info("Processing 'image type': %s", imagetyp)
-
-                    sub_group = group[group['imageType'] == imagetyp]
-                    #self.logger.info("Sub-group size: %d", len(sub_group))
-
-                    light_group[column] = light_group.apply(lambda x: sub_group[sub_group['gain' if imagetyp != 'FLAT' else 'filter'] == x['gain' if imagetyp != 'FLAT' else 'filter']]['number'].sum(), axis=1)
-                    self.logger.info("Updated 'light_group' column: %s", column)
-
-                master_imagetyp_to_column = {
-                    'MASTERBIAS': 'bias',
-                    'MASTERDARK': 'darks',
-                    'MASTERDARKFLAT': 'flatDarks',
-                    'MASTERFLAT': 'flats'
-                }
-
-                for imagetyp, column in master_imagetyp_to_column.items():
-                    self.logger.info("")
-                    self.logger.info("Processing 'MASTER' frames for 'image type': %s", imagetyp)
-
-                    sub_group = group[group['imageType'] == imagetyp]
-                    if not sub_group.empty:
-                        light_group[column] += sub_group['number'].iloc[0]
-                        self.logger.info("Updated 'light_group' column with 'MASTER' frame number: %s", sub_group['number'].iloc[0])
-
-
-                if light_group['filter'].dtype == 'object':
-                    # Save original filters for logging
-                    original_filters = light_group['filter'].unique()
-                    light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x, x))
-
-                    # Prepare log message
-                    self.logger.info("")
-                    self.logger.info("Mapped 'filter' names to codes:")
-                    for original_filter in original_filters:
-                        mapped_code = filters_dict.get(original_filter, original_filter)
-                        self.logger.info(f"{original_filter} -> {mapped_code}")
-
-                    #self.logger.info(log_message)
-
-
-
-                column_order = ['date', 'filter', 'number', 'duration', 'binning', 'gain',
-                                'sensorCooling', 'fNumber', 'darks', 'flats', 'flatDarks', 'bias', 'bortle',
-                                'meanSqm', 'meanFwhm', 'temperature']
-                self.logger.info("")
-                self.logger.info("Ordered columns to meet AstroBin requirements")
-                light_group.rename(columns={'date-obs': 'date'}, inplace=True)
-                self.logger.info("")
-                self.logger.info("COMPLETED ASTROBIN OUTPUT CREATION")
-
-                light_group_agg =pd.concat([light_group_agg,light_group[column_order]])
-
-
-
-            return light_group_agg
-
-        else:
-            self.logger.info("No data found")
-            return pd.DataFrame()
-
-
     def create_astrobin_output(self, df: pd.DataFrame) -> pd.DataFrame:
             """
             Creates an output DataFrame for AstroBin based on the input DataFrame.
@@ -2256,9 +2288,10 @@ class Processing():
 
 
                 if light_group['filter'].dtype == 'object':
-                    # Save original filters for logging
-                    original_filters = light_group['filter'].unique()
-                    light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x, x))
+
+                    # Get unique filters for logging and remove leading/trailing spaces from each
+                    original_filters = [f.strip() for f in light_group['filter'].unique()]  # Remove leading/trailing spaces        
+                    light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x.strip(), x.strip()))
 
                     # Prepare log message
                     self.logger.info("")
@@ -2490,60 +2523,6 @@ class Sites():
 
         return is_new
 
-    def process_new_location1(self, lat_long_pair: Tuple[float, float], api_key: str, api_endpoint: str) -> Tuple[str, int, float]:
-        """
-        Processes a new location.
-
-        Args:
-        - lat_long_pair: Tuple of latitude and longitude.
-        - api_key: API key for the geolocation service.
-        - api_endpoint: API endpoint for the geolocation service.
-
-        Returns:
-        - Tuple of location string, Bortle scale, and SQM value.
-        """
-        self.logger.info("")
-        self.logger.info("PROCESSING NEW LOCATION")
-        self.logger.info("Site location does not exist in existing sites. Reverse geocoding location address.")
-        #initialise
-        location_str = self.headers.config['defaults']['SITE']
-        try:
-            location = self.geolocator.reverse(lat_long_pair, exactly_one=True)
-            if location is None:
-                raise Exception("No location found for the given lat_long_pair.")
-            location_str = location.address
-        except GeocoderTimedOut as e:
-            self.logger.warning(f"GeocoderTimedOut: {str(e)}. Using default site from config.")
-        except GeocoderUnavailable as e:
-            self.logger.warning(f"GeocoderUnavailable: {str(e)}. Using default site from config.")
-        except Exception as e:
-            self.logger.warning(f"Exception: {str(e)}. Tying to geocod default site from config.")
-            self.logger.info(f"Using SITELAT of {self.headers.config['defaults']['SITELAT']} and SITELONG of {self.headers.config['defaults']['SITELONG']}")
-            lat_long_pair = (round(self.headers.config['defaults']['SITELAT'], self.headers.dp), round(self.headers.config['defaults']['SITELONG'], self.headers.dp))
-            try:
-                location = self.geolocator.reverse(lat_long_pair, exactly_one=True)
-                if location is None:
-                    raise Exception("No location found for the default lat_long_pair.")
-                location_str = location.address
-            except GeocoderTimedOut as e:
-                self.logger.error(f"GeocoderTimedOut: {str(e)}. Setting location string to default site.")
-            except GeocoderUnavailable as e:
-                self.logger.error(f"GeocoderUnavailable: {str(e)}. Setting location string to default site.")
-            except Exception as e:
-                self.logger.error(f"Exception: {str(e)}. Setting location string to default site.")
-
-
-        bortle, sqm, _, _, _ = self.get_bortle_sqm(lat_long_pair[0], lat_long_pair[1], api_key, api_endpoint)
-
-        if bortle == 0 and sqm == 0:
-            bortle = self.headers.config['defaults']['BORTLE']
-            sqm = self.headers.config['defaults']['SQM']
-            self.logger.warning(f"Bortle and SQM values returned from API are 0. Using default values of: Bortle {bortle} SQM {sqm} from config.")
-
-        self.logger.info(f"Processed new location: {location_str}, Bortle: {bortle}, SQM: {sqm}")
-
-        return lat_long_pair,location_str, bortle, sqm
-
     def process_new_location(self, lat_long_pair: Tuple[float, float], api_key: str, api_endpoint: str) -> Tuple[str, int, float]:
         """
         Processes a new location.
@@ -2640,31 +2619,9 @@ class Sites():
         self.logger.info("CHECKING IF LOCATIONS ARE NEW")
         for index, row in df.iterrows():
 
-
-
             lat_long_pair = (round(row['SITELAT'], self.headers.dp), round(row['SITELONG'], self.headers.dp))
             r_lat_long_pair = (np.ceil(row['SITELAT'] * 10) / 10, np.ceil(row['SITELONG'] * 10) / 10)
 
-            #self.logger.info("Lat/Long pair: %s", lat_long_pair)
-            #self.logger.info("")
-            #if not est.empty:
-
-
-                #self.logger.info(f"Unrounded")
-                #self.logger.info(f"Config[sites][latitude] : {est['latitude'].values},  header latitude:  {lat_long_pair[0]}")
-                #self.logger.info(f"Config[sites][longitude]: {est['longitude'].values}, header longitude: {lat_long_pair[1]}")
-                #self.logger.info(f"Rounded two dp")
-                #self.logger.info(f"Config[sites][latitude] : {np.round(est['latitude'].values,2)},  header latitude:  {round(lat_long_pair[0],2)}")
-                #self.logger.info(f"Config[sites][longitude]: {np.round(est['longitude'].values,2)}, header longitude: {round(lat_long_pair[1],2)}")
-                #self.logger.info(f"Rounded to one dp")
-                #self.logger.info(f"Config[sites][latitude] : {np.round(est['latitude'].values,1)},  header latitude:  {round(lat_long_pair[0],1)}")
-                #self.logger.info(f"Config[sites][longitude]: {np.round(est['longitude'].values,1)}, header longitude: {round(lat_long_pair[1],1)}")
-                #self.logger.info(f"Using Ceiling")
-                #self.logger.info(f"Config[sites][latitude] : {np.ceil(est['latitude'].values * 10) / 10},  header latitude:  {np.ceil(lat_long_pair[0] * 10) / 10}")
-                #self.logger.info(f"Config[sites][longitude]: {np.ceil(est['longitude'].values * 10) / 10}, header longitude: {np.ceil(lat_long_pair[1] * 10) / 10}")
-
-            #self.logger.info(f"Is data frame empty: {est.empty}")
-            #self.logger.info("")
 
             if self.is_new_location(est, lat_long_pair):
 

@@ -1,8 +1,10 @@
+#!/usr/bin/env python3
+
 import os
 from utils import initialise_logging,summarize_session, Headers,Processing,Sites,utils_version
 import sys
 
-version = '1.3.3'
+version = '1.3.10'
 # Changes:
 # v1.1.2 9th January 2024
 # Allows initialisation of the script without a config.ini file and no directory paths
@@ -18,27 +20,27 @@ version = '1.3.3'
 # Saved as version 1.2.0 this is now a candidate release version
 # New utils.py script v1.2.0
 # 28th January 2024
-# Saved as version 1.2.1 
+# Saved as version 1.2.1
 # New utils.py script v1.2.1
 # 29th January 2024
-# Saved as version 1.2.2 
+# Saved as version 1.2.2
 # New utils.py script v1.2.2
 # 30th January 2024
-# Saved as version 1.2.3 
+# Saved as version 1.2.3
 # New utils.py script v1.2.3
 # 6th February 2024
-# Saved as version 1.2.4 
+# Saved as version 1.2.4
 # New utils.py script v1.2.4
 # 7th February 2024
-# Saved as version 1.2.5 
+# Saved as version 1.2.5
 # New utils.py script v1.2.5
 # 7th February 2024
-# Saved as version 1.2.6 
+# Saved as version 1.2.6
 # New utils.py script v1.2.6
-# Saved as version 1.2.7 
+# Saved as version 1.2.7
 #added logging of data frames
 # New utils.py script v1.2.8
-# Saved as version 1.2.8 
+# Saved as version 1.2.8
 # added logging of data frames
 # added logging of basic header data frames
 # New utils.py script v1.2.8
@@ -49,7 +51,7 @@ version = '1.3.3'
 # use --debug in command line to save dataframes to csv files
 # 9th February 2024
 # New utils.py script v1.2.10
-# Saved as version 1.2.10 
+# Saved as version 1.2.10
 # 12th February 2024
 # Release version 1.3.0
 # 26th February 2024
@@ -61,27 +63,120 @@ version = '1.3.3'
 # 4th March 2024
 # Release version 1.3.3
 # New utils.py script v1.3.3
+# 5th March 2024
+# Release version 1.3.4
+# New utils.py script v1.3.4
+# 5th May 2024
+# Release version 1.3.5
+# New utils.py script v1.3.5
+# Added the ability to call the script with no arguments and it will process the current directory
+# All debug, txt and csv output files are saved to a subdirectory of the directory being processed
+# 16 June 2024
+# Release version 1.3.6
+# New utils.py script v1.3.6
+# Added the ability to call the script with --debug flag to save dataframes to csv files
+# Corrected error caused by site coordinates and date format of some images
+# modified script to save all output files to a subdirectory of the directory being processed
+# Release version 1.3.7
+# allows the scipt to be called from an image directory and process the images in that directory but allows for calibration directories to be passed as arguments
+# eg AstroBinUploadv1_3_7.py "." /home/user/images/calibration
+# version 1.3.8
+# 28th September 2024
+# Allows the processing of LIGHTFRAMES as well as LIGHT frames
+# Modification in the process headers function to allow the processing of LIGHTFRAMES as well as LIGHT frames
+# version 1.3.9
+# 28th September 2024
+# Allows the processing of LIGHTFRAMES and Light Frames as well as LIGHT frames
+# Modification in the process headers function to allow the processing of LIGHTFRAMES Light Frames as well as LIGHT frames
+# version 1.3.10
+# 29th September 2024
+# Deals with the case where a fractional part of a second is present in some date-obs keyword but not in others
+# Deals with the case where the filter names in teh light frames have trailing white spaces.
+
+
 
 #see utils.py for change details
 
+# Determine the script's directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# CONFIGFILENAME should only exist in the directory where the script is located
+CONFIGFILENAME = os.path.join(script_dir, 'config.ini')
 
-LOGFILENAME = 'AstroBinUploader.log'
-CONFIGFILENAME = 'config.ini'
 PRECISION = 4
 DEBUG = False
+
 def main() -> None:
     """
     Main function to process directories containing FITS files, aggregate parameters,
     get site data, summarize the session, and export the summary and AstroBin data.
     """
+    #Check for debug flag in arguments and set debug flag if found
+    DEBUG = '--debug' in sys.argv
+    #remove the debug flag from the arguments
+    if DEBUG:
+        sys.argv.remove('--debug')
+
+    # Validate directory paths
+    if len(sys.argv) < 2 and os.path.isfile(CONFIGFILENAME):
+            err = "No directory path provided. Please provide a directory path as an argument."
+            #logger.error(err)
+            print(err)
+            sys.exit(1)
+    elif len(sys.argv) >= 2 and sys.argv[1] == ".":
+        directory_paths = [os.getcwd()]+ sys.argv[2:]
+    else:
+        directory_paths = sys.argv[1:]
+
+    #Output directory is the first argument
+    output_dir = sys.argv[1]
+
+    # Ensure the output directory path is absolute
+    output_dir = os.path.abspath(output_dir)
+
+    # Construct the path for the new directory
+    output_dir_path = os.path.join(output_dir, 'AstroBinUploadInfo')
+
+    # Create the output directory called 'AstroBinUploadInfo' if it does not exist in output_dir
+    os.makedirs(output_dir_path, exist_ok=True)
+    print(f"Output directory: {output_dir_path}")
+
+    # Set LOGFILENAME based on the output directory
+    LOGFILENAME = os.path.join(output_dir_path, 'AstroBinUploader.log')
+
+    # Create the directory for the log file if it does not exist
+    os.makedirs(os.path.dirname(LOGFILENAME), exist_ok=True)
+
     # Initialise logging
     logger = initialise_logging(LOGFILENAME)
     logger.info("Logging initialised.")
+    print("Logging initialised.")
     #log the version of the script
-    logger.info(f"main version: {version}")
+    logger.info(f"main version : {version}")
     #log the version of utils
     logger.info(f"utils version: {utils_version}")
+
+    print(f"main version : {version}")
+    print(f"utils version: {utils_version}")
+
+    #log the provided arguments
+    logger.info(f"Calling function and arguments provided: {sys.argv}")
+    logger.info("")
+
+    # Validate directory paths
+    for directory in directory_paths:
+        if not os.path.exists(directory):
+            err = f"The path '{directory}' does not exist. Exiting the program."
+            logger.error(err)
+            print(err)
+            sys.exit(1)
+        elif not os.path.isdir(directory):
+            err = f"The path '{directory}' is not a directory. Exiting the program."
+            logger.error(err)
+            print(err)
+            sys.exit(1)
+        logger.info(f"Processing directory: {directory}")
+
 
     #check version of utils script is same version as this script
     if utils_version != version:
@@ -90,9 +185,11 @@ def main() -> None:
         logger.error(f"utils version is {utils_version} and must be {version}")
         logger.error("Exiting the program.")
         sys.exit(1)
+    
 
     # Create headers object
     headers = Headers(CONFIGFILENAME, logger, PRECISION)
+    print("Headers object created.")
     logger.info("Headers object created.")
 
     # Check if a configuration file was created
@@ -109,37 +206,6 @@ def main() -> None:
     sites = Sites(headers, logger)
     logger.info("Sites object created.")
 
-    #log the provided arguments
-    logger.info(f"Calling function and arguments provided: {sys.argv}")
-
-    #check for debug flag in arguments
-    DEBUG = '--debug' in sys.argv
-    #remove the debug flag from the arguments
-    if DEBUG:
-        sys.argv.remove('--debug')
-
-    # Validate directory paths
-    if len(sys.argv) < 2 and os.path.isfile(CONFIGFILENAME):
-        logger.error("No directory path provided. Exiting the program.")
-        print("Error: Please provide at least one directory path.")
-        print("Exiting the program.")
-        sys.exit(1)
-
-    directory_paths = sys.argv[1:]
-
-    # Validate directory paths
-    for directory in directory_paths:
-        if not os.path.exists(directory):
-            logger.error(f"The path '{directory}' does not exist. Exiting the program.")
-            print(f"Error: The path '{directory}' does not exist.")
-            sys.exit(1)
-        elif not os.path.isdir(directory):
-            logger.error(f"The path '{directory}' is not a directory. Exiting the program.")
-            print(f"Error: The path '{directory}' is not a directory.Exiting the program.")
-            sys.exit(1)
-        logger.info(f"Processing directory: {directory}")
-
-
     # Extract FITS headers
     logger.info("Reading FITS headers...")
     print('\nReading FITS headers...\n')
@@ -148,31 +214,31 @@ def main() -> None:
     if DEBUG:
         #if debug is True save dataframes
         #save basic headers to a csv file
-        basic_headers_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_basic_headers.csv"
+        basic_headers_csv = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_basic_headers.csv")
         basic_headers.to_csv(basic_headers_csv, index=False)
         #save modied headers to a csv file
-        headers_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_headers.csv"
+        headers_csv = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_headers.csv")
         headers_df.to_csv(headers_csv, index=False)
         logger.info("Debugging is True.")
         logger.info(f"basic headers exported to {basic_headers_csv}")
         logger.info(f"headers exported to {headers_csv}")
-    
+
     # Get location information
     logger.info("Getting site data...")
     site_modified_headers_df = sites.get_site_data(headers_df)
 
     if DEBUG:
-        modified_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_modified.csv"
+        modified_csv = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_modified.csv")
         site_modified_headers_df.to_csv(modified_csv, index=False)
         logger.info(f"site modified headers exported to {modified_csv}")
-  
+
     # Aggregate parameters
     logger.info("Aggregating parameters...")
     aggregated_df = processing.aggregate_parameters(site_modified_headers_df)
-    
+
     if DEBUG:
-        #save the aggregated data to a csv file
-        aggregated_csv = os.path.basename(directory_paths[0]).replace(" ", "_") + "_aggregated.csv"
+        # Save the aggregated data to a csv file
+        aggregated_csv = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_aggregated.csv")
         aggregated_df.to_csv(aggregated_csv, index=False)
         logger.info(f"aggregated headers exported to {aggregated_csv}")
 
@@ -186,17 +252,19 @@ def main() -> None:
     astrobin_df = processing.create_astrobin_output(aggregated_df)
     summary_txt += "\n "+output_csv
     summary_txt+= "\n\n "+ astrobin_df.to_string(index=False).replace('\n', '\n ') + "\n "
-    
+
     # Export summary to a text file
     logger.info("Exporting summary to text file...")
-    summary_file = os.path.basename(directory_paths[0]).replace(" ", "_") + "_session_summary.txt"
+    summary_file = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_session_summary.txt")
     with open(summary_file, 'w') as file:
         file.write(summary_txt)
     summary_txt+=f"\n Processing summary exported to {summary_file}\n"
 
     # Export final data to CSV
+    # Export final data to CSV
     if not astrobin_df.empty:
         logger.info("\nExporting AstroBin data to CSV...")
+        output_csv = os.path.join(output_dir_path, os.path.basename(directory_paths[0]).replace(" ", "_") + "_acquisition.csv")
         astrobin_df.to_csv(output_csv, index=False)
         summary_txt+=f"\n AstroBin data exported to {output_csv}\n"
     else:
