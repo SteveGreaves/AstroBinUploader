@@ -75,7 +75,7 @@ Key features include:
 
 - **Summary files stored in the working directory**: Creates a folder called AstroBinUploadInfo in the current image working directory. Files saved are:
 
-    - ***AstroBinUloader.log***: log file for current session
+    - ***AstroBinUploader.log***: log file for current session
 
     - ***acqusition.csv***: session summary in the correct format to copy and paste to AstroBin's import CSV dialogue.
 
@@ -525,6 +525,3 @@ If you want to contact me, you can reach me at sgreaves139@gmail.com.
 ## **License**
 
 This project uses the following licence: [GNU General Public Licence v3.0](https://github.com/SteveGreaves/AstroBinUploader/blob/main/LICENSE).
-
-
-
