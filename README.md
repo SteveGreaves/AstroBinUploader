@@ -75,7 +75,7 @@ Key features include:
 
 - **Summary files stored in the working directory**: Creates a folder called AstroBinUploadInfo in the current image working directory. Files saved are:
 
-    - ***AstroBinUloader.log***: log file for current session
+    - ***AstroBinUploader.log***: log file for current session
 
     - ***acqusition.csv***: session summary in the correct format to copy and paste to AstroBin's import CSV dialogue.
 
