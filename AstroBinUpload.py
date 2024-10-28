@@ -4,7 +4,8 @@ import os
 from utils import initialise_logging,summarize_session, Headers,Processing,Sites,utils_version
 import sys
 
-version = '1.3.10'
+version = '1.3.11'
+'''
 # Changes:
 # v1.1.2 9th January 2024
 # Allows initialisation of the script without a config.ini file and no directory paths
@@ -91,9 +92,18 @@ version = '1.3.10'
 # version 1.3.10
 # 29th September 2024
 # Deals with the case where a fractional part of a second is present in some date-obs keyword but not in others
-# Deals with the case where the filter names in teh light frames have trailing white spaces.
+# Deals with the case where the filter names in the light frames have trailing white spaces.
+# version 1.3.11
+# 16th October 2024
+# Fixes bug where running the script for the first time from the installation directory would fail
+# Deals with the case where the filter names in the light frames have trailing white spaces.
+# Modifed script to take a new default parameter for the config file
+# The parameter is USEOBSDATE  and is set to True if the actual date of the observation session is to be used when aggregating data
+# for the astrobin upload .csv output. 
+# If this prameter is set to False then the date the observation session was started is used. 
+# Deals with the case where the filter names in the light frames have trailing white spaces.
 
-
+'''
 
 #see utils.py for change details
 
@@ -118,7 +128,8 @@ def main() -> None:
         sys.argv.remove('--debug')
 
     # Validate directory paths
-    if len(sys.argv) < 2 and os.path.isfile(CONFIGFILENAME):
+    # bug fix for running the script for the first time from the installation directory here
+    if len(sys.argv) < 2: # and os.path.isfile(CONFIGFILENAME):
             err = "No directory path provided. Please provide a directory path as an argument."
             #logger.error(err)
             print(err)

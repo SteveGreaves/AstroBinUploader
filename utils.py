@@ -18,8 +18,13 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut,GeocoderUnavailable
 import numpy as np
 import warnings
+import time
 warnings.filterwarnings("ignore")
 
+utils_version = '1.3.11'
+
+
+'''
 #utils_version = '1.1.4'
 # Changes:
 # Tuesday 9th January 2024
@@ -117,7 +122,6 @@ warnings.filterwarnings("ignore")
 # Version 1.3.7
 # allows the scipt to be called from an image directory and process the images in that directory but allows for calibration directories to be passed as arguments
 # eg AstroBinUploadv1_3_7.py "." /home/user/images/calibration
-# All output files are written to the current image directory under a directory called "AstroBinUpload"
 # version 1.3.8
 # 28th September 2024
 # Allows the processing of LIGHTFRAMES as well as LIGHT frames
@@ -129,11 +133,17 @@ warnings.filterwarnings("ignore")
 # version 1.3.10
 # 29th September 2024
 # Deals with the case where a fractional part of a second is present in some date-obs keyword but not in others
-# Deals with the case where the filter names in teh light frames have trailing white spaces.
-
-
-
-utils_version = '1.3.10'
+# Deals with the case where the filter names in the light frames have trailing white spaces.
+# version 1.3.11
+# 16th October 2024
+# Fixes bug where running the script for the first time from the installation directory would fail
+# Deals with the case where the filter names in the light frames have trailing white spaces.
+# Modifed script to take a new default parameter for the config file
+# The parameter is USEOBSDATE  and is set to True if the actual date of the observation session is to be used when aggregating data
+# for the astrobin upload .csv output. 
+# If this prameter is set to False then the date the observation session was started is used.
+# added progress counter to the hfr processing   
+'''
 
 def initialise_logging(log_filename: str) -> logging.Logger:
         """
@@ -465,7 +475,6 @@ def target_details(group: pd.DataFrame, logger: logging.Logger) -> str:
 
 def observation_period(group_in: pd.DataFrame, logger: logging.Logger) -> str:
 
-
     group = group_in.copy(deep=True)
     logger.info("Determining observation period")
     period_format = " {:<25}: {}\n"
@@ -677,6 +686,7 @@ class Configuration:
         HFR             = 1.6
         FWHM            = 0
         SWCREATE        = Unknown package
+        USEOBSDATE      = TRUE
 
         [filters]
         #Filter     code
@@ -1021,6 +1031,7 @@ class Headers(Configuration):
         #create a list to store multiple header data
         self.headers = pd.DataFrame()
         self.headers_reduced = []
+        self.useobsdate = True
         #floating point precision
         self.dp = dp
         self.logger = logger
@@ -1182,11 +1193,19 @@ class Headers(Configuration):
 
         # Create a keys dictionary to select the wanted keys in the header
         self.wanted_keys = list(self.config['defaults'].keys())
-        self.wanted_keys.extend(['FILENAME', 'NUMBER', 'EGAIN', 'INSTRUME'])
-        #self.wanted_keys.extend(['FILENAME', 'NUMBER', 'INSTRUME'])
+        self.wanted_keys.extend(['FILENAME', 'NUMBER'])
+
+
+        ## Check if 'USEOBSDATE' is in the wanted_keys and if its value is false
+        if self.config['defaults'].get('USEOBSDATE').lower() == 'false':
+            self.logger.info('USEOBSDATE is set to False')
+            self.useobsdate = False
+        
+        self.wanted_keys.remove('USEOBSDATE')
+        self.logger.info('USEOBSDATE removed from wanted_keys')
+        
         hdr= {}
         reduced_header = {}
-
 
         # Check file extension and process accordingly
         if file_path.lower().endswith(('.fits', '.fit', '.fts', '.xisf')):
@@ -1395,48 +1414,6 @@ class Headers(Configuration):
         headers = self.clean_object_column(headers)
 
         return headers
-
-    def modify_lat_long_very_old(self,df):
-        # Create a DataFrame of 'LIGHT' rows
-        light_df = df[df['IMAGETYP'] == 'LIGHT']
-
-        # For each row in df, find the 'LIGHT' row that is closest in terms of 'SITELAT' and 'SITELONG'
-        for i, row in df[df['IMAGETYP'] != 'LIGHT'].iterrows():
-            # Calculate the Euclidean distance between the 'SITELAT' and 'SITELONG' of this row and each 'LIGHT' row
-            distances = np.sqrt((light_df['SITELAT'] - row['SITELAT'])**2 + (light_df['SITELONG'] - row['SITELONG'])**2)
-            # Find the index of the 'LIGHT' row with the smallest distance
-            closest_light_index = distances.idxmin()
-            # Set the 'SITELAT' and 'SITELONG' of this row to the 'SITELAT' and 'SITELONG' of the closest 'LIGHT' row
-            df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
-            df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
-
-        return df
-
-    def modify_lat_long_old(self, df):
-        # Create a DataFrame of 'LIGHT' rows
-        light_df = df[df['IMAGETYP'] == 'LIGHT']
-        self.logger.info("")
-
-        # For each row in df, find the 'LIGHT' row that is closest in terms of 'SITELAT' and 'SITELONG'
-        for i, row in df[df['IMAGETYP'] != 'LIGHT'].iterrows():
-            # Print the current row's 'SITELAT' and 'SITELONG' values
-            print(f"Current row SITELAT: {row['SITELAT']}, SITELONG: {row['SITELONG']}")
-
-            # Calculate the Euclidean distance between the 'SITELAT' and 'SITELONG' of this row and each 'LIGHT' row
-            try:
-                distances = np.sqrt((light_df['SITELAT'] - row['SITELAT'])**2 + (light_df['SITELONG'] - row['SITELONG'])**2)
-            except TypeError as e:
-                # Print the light_df 'SITELAT' and 'SITELONG' values to identify the problematic values
-                print(f"Error calculating distances. light_df SITELAT: {light_df['SITELAT'].tolist()}, SITELONG: {light_df['SITELONG'].tolist()}")
-                raise e
-
-            # Find the index of the 'LIGHT' row with the smallest distance
-            closest_light_index = distances.idxmin()
-            # Set the 'SITELAT' and 'SITELONG' of this row to the 'SITELAT' and 'SITELONG' of the closest 'LIGHT' row
-            df.at[i, 'SITELAT'] = light_df.at[closest_light_index, 'SITELAT']
-            df.at[i, 'SITELONG'] = light_df.at[closest_light_index, 'SITELONG']
-
-        return df
     
     def modify_lat_long(self, df):
         # Ensure SITELAT and SITELONG in light_df are floats
@@ -1545,6 +1522,7 @@ class Headers(Configuration):
         self.logger.info('Created sub dictionary of wanted keys from hdr')
 
         return self.check_and_convert_data_types(hdr)
+    
     def filter_and_remove_duplicates(self, headers_df: pd.DataFrame) -> pd.DataFrame:
 
         # Filter for IMAGETYP = 'LIGHT'
@@ -1868,12 +1846,16 @@ class Headers(Configuration):
         """
         self.logger.info("")
         self.logger.info("STARTING HFR EXTRACTION")
-        print("\nStarting HFR Extraction")
+        print("\nStarting HFR Extraction\n")
 
         hfr_set = self.config['defaults']['HFR']
 
+        # Filter the DataFrame to count only the relevant rows where IMAGETYP is 'LIGHT'
+        total_frames = len(df[df['IMAGETYP'] == 'LIGHT'])
+        counter = 0
         for index, row in df.iterrows():
             if row['IMAGETYP'] == 'LIGHT':
+                counter+=1
 
                 # Calculate and update HFR, IMSCALE, and FWHM values
                 file_path = row['FILENAME']
@@ -1887,12 +1869,14 @@ class Headers(Configuration):
                 df.at[index, 'HFR'] = round(hfr,2)
                 df.at[index, 'IMSCALE'] = round(imscale,2)
                 df.at[index, 'FWHM'] = round(fwhm,2)
+                # Progress indicator (overwriting on the same line)
+                print(f"\rProcessing {counter} of {total_frames} LIGHT frames", end="")
+                time.sleep(0.01)
 
                 #self.logger.info(f"Updated row {index}: Focal length: {focal_length} Pixel size : {pixel_size} um HFR: {hfr:.2f}, IMSCALE: {imscale:.2f}, FWHM: {fwhm:.2f}")
-
         self.logger.info(f"Completed HFR extraction: mean HFR: {df['HFR'].mean():.2f}, Image Scale: {imscale:.2f}, mean FWHM: {df['FWHM'].mean():.2f}")
-        print(f"\nCompleted HFR extraction. Processed {index+1} images")
-        self.number_of_images_processed = index+1
+        print(f"\rCompleted HFR Extraction                                                                 ")
+        self.number_of_images_processed = counter
 
         return df
 
@@ -1927,7 +1911,6 @@ class Processing():
                 return 'None'
             except ValueError:
                 return value
-
 
         self.logger.info("")
         self.logger.info("STARTING PARAMETER AGGREGATION")
@@ -1973,7 +1956,9 @@ class Processing():
 
             # Find the max and min dates and calculate the number of days between them
             default_date = pd.to_datetime('1900-01-01')
-
+            # Define the threshold for midnight and midday
+            midnight = pd.Timestamp("00:00:00").time()
+            midday = pd.Timestamp("12:00:00").time()
 
 
             try:
@@ -2014,20 +1999,73 @@ class Processing():
                     # As a last resort, use infer_datetime_format to handle varied formats
                     df['date-obs'] = pd.to_datetime(df['date-obs'], infer_datetime_format=True, errors='coerce')
    
-            #df['date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%d')
+            # old method
+        
+            if not self.headers.useobsdate:
+                self.logger.info("Use observation date is False. Proceeding with custom date handling.")
+
+                # Define the threshold as a Timedelta in hours
+                threshold = pd.Timedelta(hours=5)
+                self.logger.info(f"Threshold set to {threshold} (5 hours).")
+
+                # Sort the DataFrame by 'date-obs' column in ascending order
+                df = df.sort_values(by='date-obs', ascending=True).reset_index(drop=True)
+                self.logger.info("Sorted DataFrame by 'date-obs' in ascending order.")
+
+                # Create a new column to store the updated date values
+                df['new-date-obs'] = df['date-obs']
+                self.logger.info("Created a new column 'new-date-obs' to store updated date values.")
+
+                # Loop through the 'date-obs' column starting from the second date
+                ref_datetime  = df['date-obs'][0]
+
+                # If the time is between midnight and midday (exclusive), adjust the date to the previous day
+                if midnight < ref_datetime.time() < midday:
+                    ref_date = ref_datetime.date() - timedelta(days=1)  # Adjust to the previous day
+                else:
+                    ref_date = ref_datetime.date()  # Keep the same date
+
+                self.logger.info(f"Reference date set to the first 'date-obs' value: {ref_date}.")
+
+                for n in range(1, len(df['date-obs'])):
+                    # Ensure both current and previous dates are Timestamps
+                    current_date = df['date-obs'][n]
+                    previous_date = df['date-obs'][n-1]
+
+                    # Calculate the difference between current and previous date
+                    date_diff = current_date - previous_date
+                    self.logger.debug(f"Processing row {n}: current_date={current_date}, previous_date={previous_date}, date_diff={date_diff}.")
+
+                    if date_diff > threshold:
+                        ref_date = current_date.date()
+                        self.logger.info(f"Date difference ({date_diff}) exceeded threshold. Updated reference date to {ref_date}.")
+
+                    # Set the new date in the 'new-date-obs' column
+                    df.at[n, 'new-date-obs'] = ref_date
+                    self.logger.debug(f"Updated 'new-date-obs' for row {n} to {ref_date}.")
+
+                # After the loop, replace the 'date-obs' column with the updated values
+                df.drop(columns=['date-obs'], inplace=True)
+                df.rename(columns={'new-date-obs': 'date-obs'}, inplace=True)
+                self.logger.info("Replaced original 'date-obs' column with updated values from 'new-date-obs'.")
+       
+
+            # new method 
             df['date-obs'] = pd.to_datetime(df['date-obs']).dt.date
+            self.logger.info("Converted 'date-obs' column to datetime.date format.")
 
-
-            self.logger.info("Created a date column to date")
-            # Split the DataFrame into two
-            #df_master = df[df['imagetyp'].str.contains('MASTER')]
-            # Split the DataFrame into two
+            # Split the DataFrame into two: 'MASTER' and not 'MASTER'
             df_master = df[df['imagetyp'].str.contains('MASTER') & ~df['imagetyp'].str.contains('MASTERLIGHT')]
-
             df_not_master = df[~df['imagetyp'].str.contains('MASTER')]
+
+            self.df_not_master = df_not_master
+            self.logger.info(f"Split DataFrame: {len(df_master)} rows in 'MASTER' and {len(df_not_master)} rows in 'not MASTER'.")
+
+
+            self.df_not_master = df_not_master
             self.logger.info("Split DataFrame into 'MASTER' and not 'MASTER'")
 
-            # Define the common aggregation dictionary
+
             # Define the common aggregation dictionary
             agg_dict = {
                 'ccd-temp': ('ccd-temp', 'mean'),
@@ -2058,10 +2096,6 @@ class Processing():
                 'end_date': ('end_date','first'),
                 'num_days': ('num_days','first')
             }
-
-            # Aggregate the 'MASTER' DataFrame
-            #agg_master_df = df_master.agg(number=('number', 'first'),**agg_dict).reset_index()
-            #self.logger.info("Aggregated 'MASTER' DataFrame")
 
             # Aggregate the not 'MASTER' DataFrame
             agg_not_master_df = df_not_master.groupby(['site','date-obs','imagetyp', 'filter', 'gain', 'xbinning', 'exposure','object']).agg(
