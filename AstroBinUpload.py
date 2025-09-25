@@ -4,7 +4,7 @@ import os
 from utils import initialise_logging,summarize_session, Headers,Processing,Sites,utils_version
 import sys
 
-version = '1.3.11'
+version = '1.3.12'
 '''
 # Changes:
 # v1.1.2 9th January 2024
@@ -100,8 +100,7 @@ version = '1.3.11'
 # Modifed script to take a new default parameter for the config file
 # The parameter is USEOBSDATE  and is set to True if the actual date of the observation session is to be used when aggregating data
 # for the astrobin upload .csv output. 
-# If this prameter is set to False then the date the observation session was started is used. 
-# Deals with the case where the filter names in the light frames have trailing white spaces.
+# If this prameter is set to False then the date the observation session was started is used.   eals with the case where the filter names in the light frames have trailing white spaces.
 
 '''
 

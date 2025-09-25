@@ -21,7 +21,7 @@ import warnings
 import time
 warnings.filterwarnings("ignore")
 
-utils_version = '1.3.11'
+utils_version = '1.3.12'
 
 
 '''
@@ -142,7 +142,11 @@ utils_version = '1.3.11'
 # The parameter is USEOBSDATE  and is set to True if the actual date of the observation session is to be used when aggregating data
 # for the astrobin upload .csv output. 
 # If this prameter is set to False then the date the observation session was started is used.
-# added progress counter to the hfr processing   
+# added progress counter to the hfr processing 
+version 1.3.12
+# 24th September 2025
+# Modified xml_to_data function so it can obtain number of images used in a master. This was required as pixinsight modified the .xisf file
+# structure and moved to count of images used to make the master to a new position in the .xisf header  
 '''
 
 def initialise_logging(log_filename: str) -> logging.Logger:
@@ -697,6 +701,7 @@ class Configuration:
         Green       = 4643
         Blue        = 4637
         Lum         = 2906
+        CLS         = 4632
         [secret]
         #API key        API endpoint
         xxxxxxxxxxxxxxxx     = https://www.lightpollutionmap.info/QueryRaster/
@@ -1074,56 +1079,88 @@ class Headers(Configuration):
 
         return xml_header
 
-    def xml_to_data(self,xml_header) -> Optional[None]:
+    def xml_to_data(self, xml_header: str) -> Optional[None]:
         """
-        Parses the XML header data and stores it in the instance variable 'header'.
+        Parses the XML header data and extracts FITS keywords and number of images.
 
         This function registers the XISF namespace, parses the XML header data, and iterates through each 'FITSKeyword'
-        tag in the XML. It adds the 'name' and 'value' pair to the 'header' dictionary. If the comment contains
-        'Integration with PixInsight', it extracts the software creation name. If the comment contains
-        'ImageIntegration.numberOfImages:', it extracts the number of images used to create the master and stores it in
-        the instance variable 'number'.
+        tag to build a header dictionary. It also extracts the software creation name from comments containing
+        'Integration with PixInsight'. The number of images is extracted from the 'rows' attribute of the
+        '<table id="images">' element within the '<Property id="PixInsight:ProcessingHistory">' element.
+
+        Parameters:
+        - xml_header (str): The XML header string from an XISF file.
+        - logger (logging.Logger): Logger object for logging messages.
 
         Returns:
-        - None
+        - Tuple[Dict, Optional[int]]: A tuple containing the header dictionary and the number of images,
+                                    or None if an error occurs.
         """
         header = {}
         self.logger.info("")
         self.logger.info("CONVERTING XML HEADER DATA TO DICTIONARY")
+        
         # Register the namespace
         ns = {'xisf': 'http://www.pixinsight.com/xisf'}
         ET.register_namespace('', ns['xisf'])
 
-        # Parse the XML data
-        root = ET.fromstring(xml_header)
-        self.logger.info('Successfully parsed XML header data')
+        try:
+            # Parse the XML data
+            root = ET.fromstring(xml_header)
+            self.logger.info('Successfully parsed XML header data')
 
-        # Iterate through each 'FITSKeyword' tag in the XML
-        for fits_keyword in root.findall('.//xisf:FITSKeyword', namespaces=ns):
-            name = fits_keyword.get('name')
-            value = fits_keyword.get('value')
-            comment = fits_keyword.get('comment')
+            # Iterate through each 'FITSKeyword' tag in the XML
+            for fits_keyword in root.findall('.//xisf:FITSKeyword', namespaces=ns):
+                name = fits_keyword.get('name')
+                value = fits_keyword.get('value')
+                comment = fits_keyword.get('comment') or ''
 
-            # Add the 'name', 'value' pair to the dictionary
-            header[name] = value
-            #self.logger.info('Added %s: %s to header dictionary', name, value)
+                # Add the 'name', 'value' pair to the dictionary
+                header[name] = value
+                # logger.info('Added %s: %s to header dictionary', name, value)
 
-            # Deal with master image files and extract number of images used to create master
-            # Search for the the creation software name
-            if 'Integration with PixInsight' in comment:
-                header['SWCREATE'] = ' '.join(comment.split()[2:])
-                #self.logger.info('Found software creation name in comment: %s', header['SWCREATE'])
+                # Search for the creation software name
+                if 'Integration with PixInsight' in comment:
+                    header['SWCREATE'] = ' '.join(comment.split()[2:])
+                    # logger.info('Found software creation name in comment: %s', header['SWCREATE'])
 
-            # Halt search when number of images text is found in the comment
-            if 'ImageIntegration.numberOfImages:' in comment:
-                # Find the number in the string
-                match = re.search(r'ImageIntegration.numberOfImages: (\d+)', comment)
-                if match:
-                    # Extract the number and convert it to an integer
-                    self.number = int(match.group(1))
-                    #self.logger.info('Found number of images in comment: %d', self.number)
-                    return header
-        return header
+            # Find the Property element with id="PixInsight:ProcessingHistory"
+            property_elem = root.find(".//xisf:Property[@id='PixInsight:ProcessingHistory']", namespaces=ns)
+            if property_elem is not None:
+                # Extract and parse the nested XML string
+                nested_xml = property_elem.text
+                if nested_xml and nested_xml.strip():
+                    try:
+                        nested_root = ET.fromstring(nested_xml)
+                        # Find the table with id="images"
+                        table_elem = nested_root.find(".//table[@id='images']")
+                        if table_elem is not None:
+                            rows = table_elem.get('rows')
+                            if rows is not None:
+                                try:
+                                    self.number = int(rows)
+                                    self.logger.info('Found number of images used in master: %d', self.number)
+                                except ValueError:
+                                    self.logger.error("Invalid 'rows' attribute value: %s", rows)
+                            else:
+                                self.logger.warning("No 'rows' attribute found in table element")
+                        else:
+                            self.logger.warning("No table with id='images' found in ProcessingHistory")
+                    except ET.ParseError:
+                        self.logger.error("Failed to parse nested XML in ProcessingHistory")
+                else:
+                    self.logger.warning("No nested XML content found in ProcessingHistory")
+            else:
+                self.logger.warning("No Property with id='PixInsight:ProcessingHistory' found")
+
+            return header
+
+        except ET.ParseError:
+            self.logger.error("Invalid XML format. The provided header may be incomplete or malformed.")
+            return None
+        except Exception as e:
+            self.logger.error("An unexpected error occurred while parsing XML: %s", str(e))
+            return None
 
     def get_number_of_FIT_cal_frames(self,header) -> Optional[None]:
         """
