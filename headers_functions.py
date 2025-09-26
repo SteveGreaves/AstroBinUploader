@@ -26,6 +26,10 @@ from datetime import datetime
 # Function name: process_headers
 # Modification : Stop code counting master light frames, as these have no useful date information actual light frames must be used
 # Author : SDG
+# Date: Friday 26th September 2024
+# Function name: condition_headers
+# Modification : Fix to correct EGAIN values being reported as -1 when correct EGAIN values were present
+# Author : SDG
 
 
 def initialize_headers(config: ConfigObj, logger: logging.Logger, dp: int) -> Dict[str, Any]:
@@ -784,10 +788,15 @@ def condition_headers(headers: List[Dict[str, Any]], state: Dict[str, Any]) -> p
         logger.info("Checked and updated camera gains")
 
         # Apply default gains for invalid values
-        headers_df.loc[headers_df['GAIN'] == -1, 'EGAIN'] = config['defaults']['EGAIN']
+        # 2025-09-26 Fix to correct EGAIN values being reported as -1 wnen correct EGAIN values were present
+        headers_df.loc[headers_df['EGAIN'] == -1, 'EGAIN'] = config['defaults']['EGAIN']
+        headers_df['EGAIN'] = headers_df['EGAIN'].abs()
+        #headers_df.loc[headers_df['GAIN'] == -1, 'EGAIN'] = config['defaults']['EGAIN']
         headers_df.loc[headers_df['GAIN'] == -1, 'GAIN'] = config['defaults']['GAIN']
         headers_df['GAIN'] = headers_df['GAIN'].abs()
         logger.info("Set GAIN to absolute value and applied defaults for negative gains")
+
+
 
         # Extract HFR, IMSCALE, and FWHM
         headers_df = get_HFR(headers_df, state)
