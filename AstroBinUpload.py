@@ -3,6 +3,7 @@
 import os
 import sys
 import argparse
+from pathlib import Path
 from config_functions import initialise_config,config_version
 from headers_functions import initialize_headers, process_directories
 from processing_functions import initialize_processing, aggregate_parameters, create_astrobin_output
@@ -12,10 +13,10 @@ from utils import initialise_logging, summarize_session, utils_version
 version = '1.4.1'
 
 # Determine the script's directory
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = Path(__file__).parent
 
 # CONFIGFILENAME should only exist in the directory where the script is located
-CONFIGFILENAME = os.path.join(script_dir, 'config.ini')
+CONFIGFILENAME = script_dir / 'config.ini'
 
 PRECISION = 4
 DEBUG = False
@@ -27,14 +28,17 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   %(prog)s "/path/to/images"                    # Process single directory
-  %(prog)s "/path/to/images" "/path/to/cals"   # Process multiple directories
-  %(prog)s . --debug                           # Process current directory with debug output"""
+  %(prog)s "/path/to/images" "/path/to/cals"    # Process multiple directories
+  %(prog)s . --debug                            # Process current directory with debug output
+  %(prog)s --configfile "config2.ini"           # Use custom config file, must exist in script directory"""
     )
     
     parser.add_argument('directories', nargs='*', 
                        help='Directory paths to process (use "." for current directory)')
     parser.add_argument('--debug', action='store_true',
                        help='Enable debug output and save intermediate CSV files')
+    parser.add_argument('--configfile',
+                       help='Path to alternative config file')
     parser.add_argument('--version', action='version', version=f'%(prog)s {version}')
     
     args = parser.parse_args()
@@ -58,13 +62,25 @@ def main() -> None:
     args, directory_paths = parse_arguments()
     DEBUG = args.debug
     
+    # Use custom config file if provided
+    global CONFIGFILENAME
+    if args.configfile:
+        custom_config = script_dir / args.configfile
+        if custom_config.exists():
+            CONFIGFILENAME = custom_config
+            print(f"Using custom config file: {args.configfile}")
+        else:
+            print(f"Error: Config file '{custom_config}' does not exist.")
+            sys.exit(1)
+
+    CONFIGFILENAME = str(CONFIGFILENAME) # For backwards compatibility with functions expecting a string
     # Handle config initialization when no directories provided
     if not directory_paths:
         # Initialize config and exit
         try:
             config, change = initialise_config(CONFIGFILENAME, None)
             if change:
-                print("A new config.ini file was created. Please edit this before re-running the script.")
+                print(f"A new {CONFIGFILENAME} file was created. Please edit this before re-running the script.")
                 sys.exit(0)
             else:
                 print("Error: No directory paths provided. Use --help for usage information.")
@@ -110,6 +126,7 @@ def main() -> None:
         print(f"main version: {version}")
         print(f"utils version: {utils_version}")
         logger.info(f"Calling function and arguments provided: {' '.join([sys.argv[0]] + directory_paths + (['--debug'] if DEBUG else []))}")
+        logger.info(f"Using config file: {CONFIGFILENAME}")
         logger.info("")
     except Exception as e:
         print(f"Error initializing logging: {str(e)}")
