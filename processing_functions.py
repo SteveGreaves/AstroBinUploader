@@ -110,34 +110,39 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         default_date = pd.to_datetime('1900-01-01')
         # Add session and date columns to DataFrame
         try:
-            df.loc[:, 'sessions'] = sessions
-            df.loc[:, 'start_date'] = pd.to_datetime(min(dates).date())
-            df.loc[:, 'end_date'] = pd.to_datetime(max(dates).date())
-            df.loc[:, 'num_days'] = (max(dates).date() - min(dates).date()).days + 1
+            df = df.assign(
+                sessions=sessions,
+                start_date=pd.to_datetime(min(dates).date()),
+                end_date=pd.to_datetime(max(dates).date()),
+                num_days=(max(dates).date() - min(dates).date()).days + 1
+            )
             logger.info(f"Start date: {df['start_date'].iloc[0]}, End date: {df['end_date'].iloc[0]}, Number of days: {df['num_days'].iloc[0]}")
         except Exception as e:
             # Log error and set default values if date setting fails
             logger.error(f"Error setting date parameters: {e}")
-            df.loc[:, 'sessions'] = 0
-            df.loc[:, 'start_date'] = default_date
-            df.loc[:, 'end_date'] = default_date
-            df.loc[:, 'num_days'] = 0
+            df = df.assign(
+                sessions=0,
+                start_date=default_date,
+                end_date=default_date,
+                num_days=0
+            )
 
         # Convert date-obs to datetime, handling multiple formats
         try:
             # Try standard format first
-            df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
-            if df['date-obs'].isna().any():
+            date_obs = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
+            if date_obs.isna().any():
                 # Try format with microseconds if standard format fails
                 try:
-                    df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S.%f', errors='coerce')
+                    date_obs = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S.%f', errors='coerce')
                 except ValueError:
                     # Fall back to inferred format if both fail
-                    df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], infer_datetime_format=True, errors='coerce')
+                    date_obs = pd.to_datetime(df['date-obs'], infer_datetime_format=True, errors='coerce')
+            df = df.assign(**{'date-obs': date_obs})
         except Exception as e:
             # Log error and set default date if conversion fails
             logger.error(f"Error converting date-obs to datetime: {e}")
-            df.loc[:, 'date-obs'] = default_date
+            df = df.assign(**{'date-obs': default_date})
 
         # Handle custom date processing if useobsdate is False
         if not state['headers_state']['useobsdate']:
@@ -150,7 +155,7 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
                 logger.info("Sorted DataFrame by 'date-obs'")
 
                 # Initialize new-date-obs with original dates
-                df.loc[:, 'new-date-obs'] = df['date-obs']
+                df = df.assign(**{'new-date-obs': df['date-obs']})
                 # Get reference datetime from first row
                 ref_datetime = df['date-obs'][0]
                 # Define time boundaries for date adjustment
@@ -171,7 +176,7 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
                     if date_diff > threshold:
                         ref_date = current_date.date()
                         logger.info(f"Date difference ({date_diff}) exceeded threshold. Updated reference date to {ref_date}")
-                    df.loc[n, 'new-date-obs'] = ref_date
+                    df.at[n, 'new-date-obs'] = ref_date
                     logger.debug(f"Updated 'new-date-obs' for row {n} to {ref_date}")
 
                 # Replace original date-obs with new values
@@ -182,7 +187,7 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
                 logger.error(f"Error in custom date handling: {e}")
 
         # Convert date-obs to date format
-        df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs']).dt.date
+        df = df.assign(**{'date-obs': pd.to_datetime(df['date-obs']).dt.date})
         logger.info("Converted 'date-obs' column to datetime.date format")
 
         # Split DataFrame into MASTER and non-MASTER
@@ -240,7 +245,7 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
             aggregated_df = agg_not_master_df
         else:
             df_master = df_master.copy()
-            df_master.loc[:, 'imscale'] = df_not_master['imscale']
+            df_master = df_master.assign(imscale=df_not_master['imscale'].iloc[0] if not df_not_master.empty else 0)
             aggregated_df = pd.concat([df_master, agg_not_master_df])
             logger.info("Concatenated MASTER and non-MASTER results")
 
@@ -265,32 +270,34 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
 
         # Force numeric data types
         try:
-            aggregated_df.loc[:, 'sensorCooling'] = aggregated_df['sensorCooling'].astype(float).round().astype(int)
-            aggregated_df.loc[:, 'temp_min'] = aggregated_df['temp_min'].astype(float)
-            aggregated_df.loc[:, 'temp_max'] = aggregated_df['temp_max'].astype(float)
-            aggregated_df.loc[:, 'temperature'] = aggregated_df['temperature'].astype(float)
-            aggregated_df.loc[:, 'meanFwhm'] = aggregated_df['meanFwhm'].astype(float)
-            aggregated_df.loc[:, 'sitelat'] = aggregated_df['sitelat'].astype(float)
-            aggregated_df.loc[:, 'sitelong'] = aggregated_df['sitelong'].astype(float)
-            aggregated_df.loc[:, 'fNumber'] = aggregated_df['fNumber'].astype(float)
-            aggregated_df.loc[:, 'bortle'] = aggregated_df['bortle'].astype(float)
-            aggregated_df.loc[:, 'meanSqm'] = aggregated_df['meanSqm'].astype(float)
-            aggregated_df.loc[:, 'egain'] = aggregated_df['egain'].astype(float)
-            aggregated_df.loc[:, 'camera'] = aggregated_df['camera'].astype(str)
-            aggregated_df.loc[:, 'telescope'] = aggregated_df['telescope'].astype(str)
-            aggregated_df.loc[:, 'focuser'] = aggregated_df['focuser'].astype(str)
-            aggregated_df.loc[:, 'filterWheel'] = aggregated_df['filterWheel'].astype(str)
-            aggregated_df.loc[:, 'rotator'] = aggregated_df['rotator'].astype(str)
-            aggregated_df.loc[:, 'target'] = aggregated_df['target'].astype(str)
-            aggregated_df.loc[:, 'swcreate'] = aggregated_df['swcreate'].astype(str)
-            aggregated_df.loc[:, 'duration'] = aggregated_df['duration'].astype(float)
-            aggregated_df.loc[:, 'focalLength'] = aggregated_df['focalLength'].astype(float)
-            aggregated_df.loc[:, 'pixelSize'] = aggregated_df['pixelSize'].astype(float)
-            aggregated_df.loc[:, 'imageType'] = aggregated_df['imageType'].astype(str)
-            aggregated_df.loc[:, 'sessions'] = aggregated_df['sessions'].astype(int)
-            aggregated_df.loc[:, 'start_date'] = pd.to_datetime(aggregated_df['start_date']).dt.date
-            aggregated_df.loc[:, 'end_date'] = pd.to_datetime(aggregated_df['end_date']).dt.date
-            aggregated_df.loc[:, 'num_days'] = aggregated_df['num_days'].astype(int)
+            aggregated_df = aggregated_df.assign(
+                sensorCooling=aggregated_df['sensorCooling'].astype(float).round().astype(int),
+                temp_min=aggregated_df['temp_min'].astype(float),
+                temp_max=aggregated_df['temp_max'].astype(float),
+                temperature=aggregated_df['temperature'].astype(float),
+                meanFwhm=aggregated_df['meanFwhm'].astype(float),
+                sitelat=aggregated_df['sitelat'].astype(float),
+                sitelong=aggregated_df['sitelong'].astype(float),
+                fNumber=aggregated_df['fNumber'].astype(float),
+                bortle=aggregated_df['bortle'].astype(float),
+                meanSqm=aggregated_df['meanSqm'].astype(float),
+                egain=aggregated_df['egain'].astype(float),
+                camera=aggregated_df['camera'].astype(str),
+                telescope=aggregated_df['telescope'].astype(str),
+                focuser=aggregated_df['focuser'].astype(str),
+                filterWheel=aggregated_df['filterWheel'].astype(str),
+                rotator=aggregated_df['rotator'].astype(str),
+                target=aggregated_df['target'].astype(str),
+                swcreate=aggregated_df['swcreate'].astype(str),
+                duration=aggregated_df['duration'].astype(float),
+                focalLength=aggregated_df['focalLength'].astype(float),
+                pixelSize=aggregated_df['pixelSize'].astype(float),
+                imageType=aggregated_df['imageType'].astype(str),
+                sessions=aggregated_df['sessions'].astype(int),
+                start_date=pd.to_datetime(aggregated_df['start_date']).dt.date,
+                end_date=pd.to_datetime(aggregated_df['end_date']).dt.date,
+                num_days=aggregated_df['num_days'].astype(int)
+            )
         except Exception as e:
             logger.error(f"Error converting data types: {e}")
 
@@ -309,7 +316,9 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         })
         logger.info("Rounded and cast values to correct type")
 
-        aggregated_df.loc[:, 'rotator'] = aggregated_df['rotator'].apply(replace_numeric_with_none)
+        aggregated_df = aggregated_df.assign(
+            rotator=aggregated_df['rotator'].apply(replace_numeric_with_none)
+        )
         logger.info("Processed rotator column")
 
         logger.info(f"aggregated_df keys: {list(aggregated_df.keys())}")
