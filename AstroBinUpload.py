@@ -2,14 +2,14 @@
 
 import os
 import sys
-import pandas as pd
+import argparse
 from config_functions import initialise_config,config_version
 from headers_functions import initialize_headers, process_directories
 from processing_functions import initialize_processing, aggregate_parameters, create_astrobin_output
 from sites_functions import initialize_sites, get_site_data
 from utils import initialise_logging, summarize_session, utils_version
 
-version = '1.4.0'
+version = '1.4.1'
 
 # Determine the script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,28 +20,61 @@ CONFIGFILENAME = os.path.join(script_dir, 'config.ini')
 PRECISION = 4
 DEBUG = False
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Process FITS files and create AstroBin acquisition CSV',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  %(prog)s "/path/to/images"                    # Process single directory
+  %(prog)s "/path/to/images" "/path/to/cals"   # Process multiple directories
+  %(prog)s . --debug                           # Process current directory with debug output"""
+    )
+    
+    parser.add_argument('directories', nargs='*', 
+                       help='Directory paths to process (use "." for current directory)')
+    parser.add_argument('--debug', action='store_true',
+                       help='Enable debug output and save intermediate CSV files')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {version}')
+    
+    args = parser.parse_args()
+    
+    # Handle no arguments case for config initialization
+    if not args.directories:
+        return args, []
+    
+    # Handle current directory shortcut
+    if args.directories == ['.']:
+        args.directories = [os.getcwd()]
+    
+    return args, args.directories
+
 def main() -> None:
     """
     Main function to process directories containing FITS files, aggregate parameters,
     get site data, summarize the session, and export the summary and AstroBin data.
     """
-    # Check for debug flag in arguments and set debug flag if found
-    DEBUG = '--debug' in sys.argv
-    if DEBUG:
-        sys.argv.remove('--debug')
-
-    # Validate directory paths
-    if len(sys.argv) < 2:
-        err = "No directory path provided. Please provide a directory path as an argument."
-        print(err)
-        sys.exit(1)
-    elif len(sys.argv) >= 2 and sys.argv[1] == ".":
-        directory_paths = [os.getcwd()] + sys.argv[2:]
-    else:
-        directory_paths = sys.argv[1:]
-
+    # Parse command line arguments
+    args, directory_paths = parse_arguments()
+    DEBUG = args.debug
+    
+    # Handle config initialization when no directories provided
+    if not directory_paths:
+        # Initialize config and exit
+        try:
+            config, change = initialise_config(CONFIGFILENAME, None)
+            if change:
+                print("A new config.ini file was created. Please edit this before re-running the script.")
+                sys.exit(0)
+            else:
+                print("Error: No directory paths provided. Use --help for usage information.")
+                sys.exit(1)
+        except Exception as e:
+            print(f"Error initializing configuration: {str(e)}")
+            sys.exit(1)
+    
     # Output directory is the first argument
-    output_dir = sys.argv[1]
+    output_dir = directory_paths[0]
 
     # Ensure the output directory path is absolute
     output_dir = os.path.abspath(output_dir)
@@ -76,7 +109,7 @@ def main() -> None:
         logger.info(f"utils version: {utils_version}")
         print(f"main version: {version}")
         print(f"utils version: {utils_version}")
-        logger.info(f"Calling function and arguments provided: {sys.argv}")
+        logger.info(f"Calling function and arguments provided: {' '.join([sys.argv[0]] + directory_paths + (['--debug'] if DEBUG else []))}")
         logger.info("")
     except Exception as e:
         print(f"Error initializing logging: {str(e)}")

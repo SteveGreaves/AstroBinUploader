@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.0'
+utils_version = '1.4.1'
 
 def initialise_logging(log_filename: str, logger: logging.Logger = None) -> logging.Logger:
     """Initializes logging for the application with robust error handling.
