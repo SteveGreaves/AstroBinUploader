@@ -10,6 +10,24 @@ from configobj import ConfigObj
 from astropy.io import fits
 from datetime import datetime
 
+#
+# Changes:
+# Date: Thursday 25th September 2024
+# Created SDG
+# Date: Friday 26th September 2024
+# Function name:  filter_and_remove_duplicates
+# Modification :  Extract base filename without calibration postfixes making the selection case insensitive
+# Author : SDG
+# Date: Friday 26th September 2024
+# Function name: process_headers
+# Modification : When normalizing IMAGETYP for LIGHT allow any variant of light frame name to be recognised
+# Author : SDG
+# Date: Friday 26th September 2024
+# Function name: process_headers
+# Modification : Stop code counting master light frames, as these have no useful date information actual light frames must be used
+# Author : SDG
+
+
 def initialize_headers(config: ConfigObj, logger: logging.Logger, dp: int) -> Dict[str, Any]:
     """Initializes the header processing state for FITS/XISF file handling.
 
@@ -405,13 +423,25 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
         if 'IMAGETYP' not in hdr:
             logger.warning(f"IMAGETYP key not found in header for {file_path}")
             return None
+        
+        # Drop header if it contains 'master light' in IMAGETYP
+        # added 2026 to stope code counting master light frames, as these have no useful date information actual light frames must be used
+        if 'master light' in hdr['IMAGETYP'].lower():
+            logger.info(f"Dropping header for {file_path} as it contains 'master light' in IMAGETYP")
+            return None
 
         # Normalize IMAGETYP for LIGHT frames
-        if hdr['IMAGETYP'] in ['LIGHTFRAME', "'LIGHTFRAME'", "'Light Frame'", 'Light Frame']:
+        # modified 2026-09-26 to allow any variant of light frame name to be recognised
+        if 'light' in hdr['IMAGETYP'].lower():
             hdr['IMAGETYP'] = 'LIGHT'
-            logger.info("Converted IMAGETYP from LIGHTFRAME to LIGHT")
+            logger.info("Converted IMAGETYP to LIGHT")
+        
+        #replaced code
+        #if hdr['IMAGETYP'] in ['LIGHTFRAME', "'LIGHTFRAME'", "'Light Frame'", 'Light Frame']:
+        #    hdr['IMAGETYP'] = 'LIGHT'
+        #    logger.info("Converted IMAGETYP from LIGHTFRAME to LIGHT")
 
-        # Log if file is a master frame
+        # Log if file is a master frame other than a master light frame
         if state['number'] > 1:
             logger.info(f"File {file_path} is a master with {state['number']} images")
         else:
@@ -974,8 +1004,11 @@ def filter_and_remove_duplicates(headers_df: pd.DataFrame, logger: logging.Logge
             logger.error(f"Missing required columns: {missing}")
             return headers_df
 
-        # Extract base filename without calibration postfixes
-        headers_df['base_filename'] = headers_df['FILENAME'].str.extract(r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)')[0]
+        # Extract base filename without calibration postfixes. Updated 2025-9-26 to make the selection case insensitive
+        headers_df['base_filename'] = headers_df['FILENAME'].str.extract(r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)', flags=re.IGNORECASE)[0]
+        
+        #headers_df['base_filename'] = headers_df['FILENAME'].str.extract(r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)')[0]
+        
         if headers_df['base_filename'].isna().all():
             logger.warning("No valid base filenames extracted")
             return headers_df
