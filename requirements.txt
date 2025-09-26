@@ -1,5 +1,7 @@
-pandas
-configobj
-astropy
-requests
-geopy
+pandas==2.2.3 
+numpy==2.1.1 
+configobj==5.0.8 
+astropy==6.1.3 
+requests==2.32.3 
+geopy==2.4.1 
+python-dateutil==2.9.0.post0
