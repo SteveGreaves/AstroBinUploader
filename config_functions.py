@@ -99,6 +99,7 @@ TELESCOP        = None
 FOCNAME         = None
 FWHEEL          = None
 ROTATOR         = None
+ROTNAME         = None
 XPIXSZ          = 3.76
 CCD-TEMP        = -10
 FOCALLEN        = 540
