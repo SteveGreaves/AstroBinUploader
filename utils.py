@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.0'
+utils_version = '1.4.1'
 
 def initialise_logging(log_filename: str, logger: logging.Logger = None) -> logging.Logger:
     """Initializes logging for the application with robust error handling.
@@ -443,7 +443,7 @@ def equipment_used(group: pd.DataFrame, df: pd.DataFrame, logger: logging.Logger
         if not isinstance(group, pd.DataFrame) or not isinstance(df, pd.DataFrame):
             raise ValueError("group and df must be pandas DataFrames")
 
-        required_columns = {'telescope', 'camera', 'filterWheel', 'focuser', 'rotator', 'swcreate'}
+        required_columns = {'telescope', 'camera', 'filterWheel', 'focuser', 'rotator', 'rotname', 'swcreate'}
         if not required_columns.issubset(group.columns):
             missing = required_columns - set(group.columns)
             logger.error(f"Missing required columns in group DataFrame: {missing}")
@@ -460,10 +460,13 @@ def equipment_used(group: pd.DataFrame, df: pd.DataFrame, logger: logging.Logger
             'Focuser': group['focuser'].iloc[0],
             'Rotator': group['rotator'].iloc[0]
         }
-
         for item, value in equipment_items.items():
             if pd.notna(value) and value != 'None':
                 equipment.append(equipment_format.format(item, value))
+            else:
+                if item == 'Rotator' and group['rotname'].iloc[0] != 'None':
+                    logger.info("Substituting empty rotator value with value from rotname")
+                    equipment.append(equipment_format.format(item, group['rotname'].iloc[0]))
         logger.info(f"Equipment details: {', '.join(f'{k}: {v}' for k, v in equipment_items.items() if pd.notna(v) and v != 'None')}")
 
         software_set = set(group['swcreate'].dropna().unique())
