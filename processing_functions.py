@@ -443,33 +443,34 @@ def create_astrobin_output(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
             except Exception as e:
                 logger.error(f"Error processing MASTER frames for {imagetyp}: {e}")
 
-        # Check if filter column is of object type
-        if light_group['filter'].dtype == 'object':
-            try:
-                # Get unique filters
-                original_filters = [f.strip() for f in light_group['filter'].unique()]
-                # Map filter names to codes using dictionary
-                light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x.strip(), x.strip()))
-                logger.info("Mapped filter names to codes:")
-                for original_filter in original_filters:
-                    mapped_code = filters_dict.get(original_filter, original_filter)
-                    logger.info(f"{original_filter} -> {mapped_code}")
+        # Ensure filter column is string type for mapping
+        light_group['filter'] = light_group['filter'].astype(str)
 
-                # Define column order for AstroBin output
-                column_order = [
-                    'date', 'filter', 'number', 'duration', 'binning', 'gain',
-                    'sensorCooling', 'fNumber', 'darks', 'flats', 'flatDarks', 'bias',
-                    'bortle', 'meanSqm', 'meanFwhm', 'temperature'
-                ]
-                # Rename date-obs to date
-                light_group.rename(columns={'date-obs': 'date'}, inplace=True)
-                # Select ordered columns
-                light_group_agg = light_group[column_order]
-                logger.info("Ordered columns to meet AstroBin requirements")
-                logger.info("COMPLETED ASTROBIN OUTPUT CREATION")
-            except Exception as e:
-                logger.error(f"Error processing filter mappings: {e}")
-                return pd.DataFrame()
+        try:
+            # Get unique filters
+            original_filters = [f.strip() for f in light_group['filter'].unique()]
+            # Map filter names to codes using dictionary
+            light_group['filter'] = light_group['filter'].apply(lambda x: filters_dict.get(x.strip(), x.strip()))
+            logger.info("Mapped filter names to codes:")
+            for original_filter in original_filters:
+                mapped_code = filters_dict.get(original_filter, original_filter)
+                logger.info(f"{original_filter} -> {mapped_code}")
+
+            # Define column order for AstroBin output
+            column_order = [
+                'date', 'filter', 'number', 'duration', 'binning', 'gain',
+                'sensorCooling', 'fNumber', 'darks', 'flats', 'flatDarks', 'bias',
+                'bortle', 'meanSqm', 'meanFwhm', 'temperature'
+            ]
+            # Rename date-obs to date
+            light_group.rename(columns={'date-obs': 'date'}, inplace=True)
+            # Select ordered columns
+            light_group_agg = light_group[column_order]
+            logger.info("Ordered columns to meet AstroBin requirements")
+            logger.info("COMPLETED ASTROBIN OUTPUT CREATION")
+        except Exception as e:
+            logger.error(f"Error processing filter mappings: {e}")
+            return pd.DataFrame()
 
         return light_group_agg
 
