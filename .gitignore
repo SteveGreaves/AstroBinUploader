@@ -166,6 +166,3 @@ cython_debug/
 
 # Configuration
 config.ini
-
-# Tests
-tests/
