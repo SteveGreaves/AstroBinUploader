@@ -1,0 +1,57 @@
+[defaults]
+        IMAGETYP = LIGHT
+        EXPOSURE = 0
+        DATE-OBS = 2023-01-01
+        XBINNING = 1
+        GAIN = -1
+        EGAIN = -1
+        INSTRUME = None
+        TELESCOP = None
+        FOCNAME = None
+        FWHEEL = None
+        ROTNAME = None
+        ROTANTANG = 0
+        XPIXSZ = 3
+        CCD-TEMP = -10
+        FOCALLEN = 540
+        FOCRATIO = 5
+        SITE = My Site Name
+        SITELAT = 0.0000
+        SITELONG = 0.0000
+        BORTLE = 4
+        SQM = 21
+        FILTER = No Filter
+        OBJECT = No target
+        FOCTEMP = 20
+        HFR = 1
+        FWHM = 0
+        SWCREATE = Unknown package
+        USEOBSDATE = False
+        ROTATANG = 0
+[override]
+        SWCREATOR = CREATOR
+        EXPOSURE = EXPTIME
+        SITE = SITENAME
+        FOCNAME = FOCUSER
+        SQM = AOCSKYQ
+        FOCTEMP = AOCAMBT
+[filters]
+        #Filter     code
+        Ha = 4663
+        SII = 4844
+        OIII = 4752
+        Red = 4649
+        Green = 4643
+        Blue = 4637
+        Lum = 2906
+        CLS = 4632
+[secret]
+        #API key        API endpoint
+        YOUR_API_KEY = https://www.lightpollutionmap.info/QueryRaster/
+        EMAIL_ADDRESS = your_email@example.com
+[sites]
+        [["My Full Site Address, Country, Postcode"]]
+                latitude = 0.0000
+                longitude = 0.0000
+                bortle = 4
+                sqm = 21
