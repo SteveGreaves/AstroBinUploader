@@ -396,6 +396,9 @@ def create_astrobin_output(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         light_group = df[df['imageType'] == 'LIGHT'].copy()
         logger.info("Created 'LIGHT' DataFrame copy")
 
+        # Ensure filter column is string type for mapping and matching
+        light_group['filter'] = light_group['filter'].astype(str)
+
         # Define mapping of image types to calibration columns
         imagetyp_to_column = {
             'BIAS': 'bias',
@@ -442,9 +445,6 @@ def create_astrobin_output(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
                     logger.info(f"Updated 'light_group' column with MASTER frame number: {column}")
             except Exception as e:
                 logger.error(f"Error processing MASTER frames for {imagetyp}: {e}")
-
-        # Ensure filter column is string type for mapping
-        light_group['filter'] = light_group['filter'].astype(str)
 
         try:
             # Get unique filters
