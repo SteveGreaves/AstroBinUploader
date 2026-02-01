@@ -3,7 +3,8 @@
 import os
 import sys
 import pandas as pd
-import warnings  
+import warnings
+import logging
 from config_functions import initialise_config, config_version
 from headers_functions import initialize_headers, process_directories
 from processing_functions import initialize_processing, aggregate_parameters, create_astrobin_output
@@ -27,7 +28,7 @@ from utils import initialise_logging, summarize_session, utils_version
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
-version = '1.4.0'
+version = '1.4.2'
 
 # Determine the script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -88,6 +89,8 @@ def main() -> None:
     # Initialize logging
     try:
         logger = initialise_logging(LOGFILENAME)
+        if DEBUG:
+            logger.setLevel(logging.DEBUG)
         logger.info("Logging initialized.")
         print("Logging initialized.")
         logger.info(f"main version: {version}")

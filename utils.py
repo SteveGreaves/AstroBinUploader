@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.0'
+utils_version = '1.4.2'
 
 #swapped rotator for rotname in equipment used function
 

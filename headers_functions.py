@@ -11,6 +11,34 @@ from astropy.io import fits
 from datetime import datetime
 import logging
 from typing import Dict, Any
+from concurrent.futures import ProcessPoolExecutor
+
+class WorkerLogger:
+    def info(self, msg, *args, **kwargs): pass
+    def debug(self, msg, *args, **kwargs): pass
+    def warning(self, msg, *args, **kwargs): pass
+    def error(self, msg, *args, **kwargs): pass
+
+def worker_process_header(file_path, defaults, override, wanted_keys, useobsdate, dp):
+    # Reconstruct minimal state
+    config = {'defaults': defaults, 'override': override}
+    logger = WorkerLogger()
+    
+    state = {
+        'config': config,
+        'logger': logger,
+        'dp': dp,
+        'number_of_images_processed': 0,
+        'header': {},
+        'headers': pd.DataFrame(),
+        'headers_reduced': [],
+        'wanted_keys': wanted_keys,
+        'useobsdate': useobsdate,
+        'header_filename': os.path.basename(file_path),
+        'number': 1
+    }
+    
+    return process_headers(file_path, state)
 
 #
 # Changes:
@@ -140,7 +168,7 @@ def read_xisf_header(file_path: str, logger: logging.Logger) -> Optional[str]:
             file.read(4)
             # Read and decode XML header
             xml_header = file.read(header_length).decode('utf-8', errors='ignore')
-            logger.info(f"Successfully read XISF header from {file_path}")
+            logger.debug(f"Successfully read XISF header from {file_path}")
             return xml_header
 
     except OSError as e:
@@ -177,7 +205,7 @@ def xml_to_data(xml_header: str, logger: logging.Logger) -> Optional[Tuple[Dict[
             raise ValueError("logger must be a logging.Logger instance")
 
         # Log start of XML parsing
-        logger.info("Parsing XML header data")
+        logger.debug("Parsing XML header data")
         # Define XISF namespace for XML parsing
         ns = {'xisf': 'http://www.pixinsight.com/xisf'}
         ET.register_namespace('', ns['xisf'])
@@ -187,7 +215,7 @@ def xml_to_data(xml_header: str, logger: logging.Logger) -> Optional[Tuple[Dict[
 
         # Parse XML header
         root = ET.fromstring(xml_header)
-        logger.info("Successfully parsed XML header")
+        logger.debug("Successfully parsed XML header")
 
         # Extract FITS keywords from XML
         for fits_keyword in root.findall('.//xisf:FITSKeyword', namespaces=ns):
@@ -212,13 +240,18 @@ def xml_to_data(xml_header: str, logger: logging.Logger) -> Optional[Tuple[Dict[
                 if table_elem is not None and table_elem.get('rows'):
                     # Extract number of images from 'rows' attribute
                     number = int(table_elem.get('rows'))
-                    logger.info(f"Found {number} images in ProcessingHistory")
+                    logger.debug(f"Found {number} images in ProcessingHistory")
                 else:
-                    logger.warning("No 'rows' attribute or table found in ProcessingHistory")
+                    logger.debug("No 'rows' attribute or table found in ProcessingHistory")
             except ET.ParseError:
                 logger.error("Failed to parse nested XML in ProcessingHistory")
         else:
-            logger.warning("No PixInsight:ProcessingHistory property found")
+            # Check if it is a master frame before warning
+            imagetyp = header.get('IMAGETYP', '').upper()
+            if 'MASTER' in imagetyp:
+                logger.warning("No PixInsight:ProcessingHistory property found")
+            else:
+                logger.debug("No PixInsight:ProcessingHistory property found")
 
         # Log extracted header for debugging
         logger.debug(f"Extracted header: {header}")
@@ -256,7 +289,7 @@ def get_number_of_FIT_cal_frames(header: Dict[str, Any], logger: logging.Logger)
             raise ValueError("logger must be a logging.Logger instance")
 
         # Log start of calibration frame count extraction
-        logger.info("Extracting calibration frame count from FITS header HISTORY")
+        logger.debug("Extracting calibration frame count from FITS header HISTORY")
         # Check if HISTORY key exists
         if 'HISTORY' not in header:
             logger.debug("No HISTORY key found in header")
@@ -271,13 +304,13 @@ def get_number_of_FIT_cal_frames(header: Dict[str, Any], logger: logging.Logger)
             if 'Integration with PixInsight' in line:
                 # Extract SWCREATE from PixInsight integration comment
                 header['SWCREATE'] = ' '.join(line.split()[2:])
-                logger.info(f"Found SWCREATE in HISTORY: {header['SWCREATE']}")
+                logger.debug(f"Found SWCREATE in HISTORY: {header['SWCREATE']}")
             if 'ImageIntegration.numberOfImages:' in line:
                 try:
                     # Extract number of images from HISTORY
                     number = int(line.split()[-1])
                     header['NUMBER'] = number
-                    logger.info(f"Found {number} calibration frames in HISTORY")
+                    logger.debug(f"Found {number} calibration frames in HISTORY")
                 except ValueError as e:
                     # Log error if number parsing fails
                     logger.error(f"Error parsing number of images from HISTORY: {str(e)}")
@@ -380,7 +413,7 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
         state['wanted_keys'] = list(config['defaults'].keys()) + ['FILENAME', 'NUMBER']
         # Check if USEOBSDATE is disabled in config
         if config['defaults'].get('USEOBSDATE', 'TRUE').lower() == 'false':
-            logger.info("USEOBSDATE is set to False")
+            logger.debug("USEOBSDATE is set to False")
             state['useobsdate'] = False
             if 'USEOBSDATE' in state['wanted_keys']:
                 # Remove USEOBSDATE from wanted keys if disabled
@@ -389,7 +422,7 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
 
         # Store filename for header
         state['header_filename'] = os.path.basename(file_path)
-        logger.info(f"Processing headers for file: {state['header_filename']}")
+        logger.debug(f"Processing headers for file: {state['header_filename']}")
 
         # Check if file exists
         if not os.path.isfile(file_path):
@@ -406,7 +439,7 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
                     hdr = dict(hdul[0].header)
                     # Extract calibration frame count from HISTORY
                     hdr = get_number_of_FIT_cal_frames(hdr, logger)
-                    logger.info(f"Extracted FITS header from {file_path}")
+                    logger.debug(f"Extracted FITS header from {file_path}")
             except OSError as e:
                 logger.error(f"Error reading FITS file {file_path}: {str(e)}")
                 return None
@@ -420,7 +453,7 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
                 if result:
                     # Extract header and image count
                     hdr, state['number'] = result
-                    logger.info(f"Parsed XISF header from {file_path}")
+                    logger.debug(f"Parsed XISF header from {file_path}")
                 else:
                     logger.error(f"Failed to parse XISF header from {file_path}")
                     return None
@@ -440,14 +473,14 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
         # Drop header if it contains 'master light' in IMAGETYP
         # added 2026 to stope code counting master light frames, as these have no useful date information actual light frames must be used
         if 'master light' in hdr['IMAGETYP'].lower():
-            logger.info(f"Dropping header for {file_path} as it contains 'master light' in IMAGETYP")
+            logger.debug(f"Dropping header for {file_path} as it contains 'master light' in IMAGETYP")
             return None
 
         # Normalize IMAGETYP for LIGHT frames
         # modified 2026-09-26 to allow any variant of light frame name to be recognised
         if 'light' in hdr['IMAGETYP'].lower():
             hdr['IMAGETYP'] = 'LIGHT'
-            logger.info("Converted IMAGETYP to LIGHT")
+            logger.debug("Converted IMAGETYP to LIGHT")
         
         #replaced code
         #if hdr['IMAGETYP'] in ['LIGHTFRAME', "'LIGHTFRAME'", "'Light Frame'", 'Light Frame']:
@@ -456,7 +489,7 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
 
         # Log if file is a master frame other than a master light frame
         if state['number'] > 1:
-            logger.info(f"File {file_path} is a master with {state['number']} images")
+            logger.debug(f"File {file_path} is a master with {state['number']} images")
         else:
             logger.debug(f"File {file_path} is not a master")
 
@@ -511,6 +544,7 @@ def process_directory(directory: str, state: Dict[str, Any]) -> List[Dict[str, A
             logger.error(f"Directory {directory} does not exist or is not a directory")
             return dir_headers
 
+        file_paths = []
         # Walk through directory and subdirectories
         for root, _, files in os.walk(directory, followlinks=True):
             print(f"Processing directory: {root}")
@@ -520,13 +554,49 @@ def process_directory(directory: str, state: Dict[str, Any]) -> List[Dict[str, A
                 if not file_path.lower().endswith(('.fits', '.fit', '.fts', '.xisf')):
                     logger.debug(f"Skipping non-FITS/XISF file: {file_path}")
                     continue
-                # Process file headers
-                header = process_headers(file_path, state)
+                file_paths.append(file_path)
+
+        # Prepare args for parallel processing
+        defaults = state['config']['defaults']
+        override = state['config']['override']
+        # Note: wanted_keys might not be fully populated in state if process_headers hasn't run yet, 
+        # but initialize_headers doesn't set it. process_headers sets it locally. 
+        # However, we can construct the initial list here or let worker do it.
+        # Worker reconstructs state, so we just need to pass None for wanted_keys and let process_headers logic handle it?
+        # Actually, process_headers says: state['wanted_keys'] = list(config['defaults'].keys()) + ['FILENAME', 'NUMBER']
+        # So it overwrites whatever is in state. So we can pass None or empty list.
+        # But wait, initialize_headers sets 'wanted_keys'? No, it doesn't.
+        # Let's check initialize_headers.
+        # It creates state with 'config', 'logger', ... but NOT 'wanted_keys'.
+        # process_headers adds it.
+        # So passing [] is fine as long as worker_process_header passes it to state, and process_headers overwrites it.
+        
+        # But wait, process_headers reads state['wanted_keys']? No, it sets it:
+        # state['wanted_keys'] = list(config['defaults'].keys()) + ['FILENAME', 'NUMBER']
+        # if config['defaults'].get('USEOBSDATE', 'TRUE').lower() == 'false': ... state['wanted_keys'].remove(...)
+        
+        # So we don't need to pass wanted_keys to worker, worker can set it.
+        # But my worker_process_header signature has wanted_keys. I'll pass empty list.
+        
+        useobsdate = state['useobsdate']
+        dp = state['dp']
+
+        with ProcessPoolExecutor() as executor:
+            # Map returns an iterator that preserves order
+            results = executor.map(worker_process_header, 
+                                   file_paths, 
+                                   [defaults] * len(file_paths), 
+                                   [override] * len(file_paths),
+                                   [[]] * len(file_paths), # wanted_keys placeholder
+                                   [useobsdate] * len(file_paths),
+                                   [dp] * len(file_paths))
+            
+            for header in results:
                 if header:
                     dir_headers.append(header)
-                    logger.debug(f"Processed header for {file_path}")
+                    logger.debug(f"Processed header") # Can't log filename easily here without tracking
                 else:
-                    logger.warning(f"No valid header found for {file_path}")
+                    logger.warning(f"No valid header found") # Can't log filename easily
 
         # Log number of headers extracted
         logger.info(f"Extracted {len(dir_headers)} headers from directory {directory}")
@@ -935,7 +1005,7 @@ def reduce_headers(hdr: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]
         # Extract logger and config
         logger, config = state['logger'], state['config']
         # Log start of header reduction
-        logger.info("Reducing headers")
+        logger.debug("Reducing headers")
 
         for fits_keyword, hdr_keyword in config['override'].items():
             # Handle case where hdr_keyword is a list
@@ -1281,7 +1351,7 @@ def check_and_convert_data_types(d: Dict[str, Any], state: Dict[str, Any]) -> Di
         # Extract logger and decimal precision
         logger, dp = state['logger'], state['dp']
         # Log start of data type conversion
-        logger.info("Checking and converting data types")
+        logger.debug("Checking and converting data types")
 
         # Define helper function to convert DMS to decimal degrees
         def dms_to_decimal(dms_str: str) -> float:
@@ -1372,7 +1442,7 @@ def check_and_convert_data_types(d: Dict[str, Any], state: Dict[str, Any]) -> Di
             else:
                 # Log missing key
                 logger.warning(f"Key {key} not found in dictionary")
-        logger.info("Completed data type conversion")
+        logger.debug("Completed data type conversion")
         return d
 
     except Exception as e:
