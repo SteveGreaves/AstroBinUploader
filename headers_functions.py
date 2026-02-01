@@ -13,32 +13,40 @@ import logging
 from typing import Dict, Any
 from concurrent.futures import ProcessPoolExecutor
 
-class WorkerLogger:
+class WorkerLogger(logging.Logger):
+    def __init__(self):
+        super().__init__('worker_logger')
     def info(self, msg, *args, **kwargs): pass
     def debug(self, msg, *args, **kwargs): pass
     def warning(self, msg, *args, **kwargs): pass
     def error(self, msg, *args, **kwargs): pass
 
 def worker_process_header(file_path, defaults, override, wanted_keys, useobsdate, dp):
-    # Reconstruct minimal state
-    config = {'defaults': defaults, 'override': override}
-    logger = WorkerLogger()
-    
-    state = {
-        'config': config,
-        'logger': logger,
-        'dp': dp,
-        'number_of_images_processed': 0,
-        'header': {},
-        'headers': pd.DataFrame(),
-        'headers_reduced': [],
-        'wanted_keys': wanted_keys,
-        'useobsdate': useobsdate,
-        'header_filename': os.path.basename(file_path),
-        'number': 1
-    }
-    
-    return process_headers(file_path, state)
+    try:
+        # Reconstruct minimal state
+        config = {'defaults': defaults, 'override': override}
+        logger = WorkerLogger()
+        
+        state = {
+            'config': config,
+            'logger': logger,
+            'dp': dp,
+            'number_of_images_processed': 0,
+            'header': {},
+            'headers': pd.DataFrame(),
+            'headers_reduced': [],
+            'wanted_keys': wanted_keys,
+            'useobsdate': useobsdate,
+            'header_filename': os.path.basename(file_path),
+            'number': 1
+        }
+        
+        return process_headers(file_path, state)
+    except Exception as e:
+        # Failsafe logging to stderr since main logger is not available
+        import sys
+        sys.stderr.write(f"Worker failed for {file_path}: {e}\n")
+        return None
 
 #
 # Changes:
@@ -557,8 +565,10 @@ def process_directory(directory: str, state: Dict[str, Any]) -> List[Dict[str, A
                 file_paths.append(file_path)
 
         # Prepare args for parallel processing
-        defaults = state['config']['defaults']
-        override = state['config']['override']
+        # Convert ConfigObj sections to dicts to ensure picklability across environments
+        defaults = dict(state['config']['defaults'])
+        override = dict(state['config']['override'])
+        
         # Note: wanted_keys might not be fully populated in state if process_headers hasn't run yet, 
         # but initialize_headers doesn't set it. process_headers sets it locally. 
         # However, we can construct the initial list here or let worker do it.
@@ -570,10 +580,6 @@ def process_directory(directory: str, state: Dict[str, Any]) -> List[Dict[str, A
         # It creates state with 'config', 'logger', ... but NOT 'wanted_keys'.
         # process_headers adds it.
         # So passing [] is fine as long as worker_process_header passes it to state, and process_headers overwrites it.
-        
-        # But wait, process_headers reads state['wanted_keys']? No, it sets it:
-        # state['wanted_keys'] = list(config['defaults'].keys()) + ['FILENAME', 'NUMBER']
-        # if config['defaults'].get('USEOBSDATE', 'TRUE').lower() == 'false': ... state['wanted_keys'].remove(...)
         
         # So we don't need to pass wanted_keys to worker, worker can set it.
         # But my worker_process_header signature has wanted_keys. I'll pass empty list.
