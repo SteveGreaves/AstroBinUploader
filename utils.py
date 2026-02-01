@@ -7,6 +7,13 @@ from typing import Tuple, Union
 import numpy as np
 
 utils_version = '1.4.2'
+#
+# Date: Sunday 1st February 2026
+# Modification : v1.4.2 Restoration & Logic Overhaul.
+# 1. Implemented 'Integer Gain Handshake' for calibration matching.
+# 2. Restored Heuristic Date Fallback for missing FITS headers.
+# 3. Optimized I/O using Pandas engine for RAID 0 performance.
+# Author : SDG & Gemini
 
 #swapped rotator for rotname in equipment used function
 

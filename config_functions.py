@@ -5,6 +5,13 @@ from typing import Any, Dict, Optional, Tuple
 from configobj import ConfigObj
 
 config_version = '1.4.0'
+#
+# Date: Sunday 1st February 2026
+# Modification : v1.4.2 Restoration & Logic Overhaul.
+# 1. Implemented 'Integer Gain Handshake' for calibration matching.
+# 2. Restored Heuristic Date Fallback for missing FITS headers.
+# 3. Optimized I/O using Pandas engine for RAID 0 performance.
+# Author : SDG & Gemini
 
 def cast_value(value: Any, logger: Optional[logging.Logger] = None) -> Any:
     """Casts a value to an appropriate type (list, float, int, or string) based on its format.

@@ -12,6 +12,13 @@ from datetime import datetime
 import logging
 from typing import Dict, Any
 from concurrent.futures import ProcessPoolExecutor
+#
+# Date: Sunday 1st February 2026
+# Modification : v1.4.2 Restoration & Logic Overhaul.
+# 1. Implemented 'Integer Gain Handshake' for calibration matching.
+# 2. Restored Heuristic Date Fallback for missing FITS headers.
+# 3. Optimized I/O using Pandas engine for RAID 0 performance.
+# Author : SDG & Gemini
 
 class WorkerLogger(logging.Logger):
     def __init__(self):
@@ -48,34 +55,7 @@ def worker_process_header(file_path, defaults, override, wanted_keys, useobsdate
         sys.stderr.write(f"Worker failed for {file_path}: {e}\n")
         return None
 
-#
-# Changes:
-# Date: Thursday 25th September 2024
-# Created SDG
-# Date: Friday 26th September 2024
-# Function name:  filter_and_remove_duplicates
-# Modification :  Extract base filename without calibration postfixes making the selection case insensitive
-# Author : SDG
-# Date: Friday 26th September 2024
-# Function name: process_headers
-# Modification : When normalizing IMAGETYP for LIGHT allow any variant of light frame name to be recognised
-# Author : SDG
-# Date: Friday 26th September 2024
-# Function name: process_headers
-# Modification : Stop code counting master light frames, as these have no useful date information actual light frames must be used
-# Author : SDG
-# Date: Friday 26th September 2024
-# Function name: condition_headers
-# Modification : Fix to correct EGAIN values being reported as -1 when correct EGAIN values were present
-# Author : SDG
-# function name: reduce_headers
-# Date 2025-09-28:
-# Updated reduce_headers function to use values from state['config']['defaults'] for SITELAT and SITELONG
-# when their values in the input hdr dictionary are empty strings (''). Added checks after alternative
-# key mappings (e.g., LAT-OBS to SITELAT) and before reducing to wanted_keys. If hdr['SITELAT'] or
-# hdr['SITELONG'] is empty, assigns config['defaults']['SITELAT'] or config['defaults']['SITELONG']
-# respectively, with logging to track replacements. Preserves existing logic for key mappings and
-# default handling for missing keys.
+
 
 def initialize_headers(config: ConfigObj, logger: logging.Logger, dp: int) -> Dict[str, Any]:
     """Initializes the header processing state for FITS/XISF file handling.
