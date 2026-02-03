@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.2'
+utils_version = '1.4.3'
 #
 # Date: Sunday 1st February 2026
 # Modification : v1.4.2 Restoration & Logic Overhaul.
@@ -14,6 +14,9 @@ utils_version = '1.4.2'
 # 2. Restored Heuristic Date Fallback for missing FITS headers.
 # 3. Optimized I/O using Pandas engine for RAID 0 performance.
 # Author : SDG & Gemini
+#
+# Date: Tuesday 3rd February 2026
+# Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
 
 #swapped rotator for rotname in equipment used function
 

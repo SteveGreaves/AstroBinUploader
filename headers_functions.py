@@ -19,6 +19,10 @@ from concurrent.futures import ProcessPoolExecutor
 # 2. Restored Heuristic Date Fallback for missing FITS headers.
 # 3. Optimized I/O using Pandas engine for RAID 0 performance.
 # Author : SDG & Gemini
+#
+# Date: Tuesday 3rd February 2026
+# Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
+# Author : SDG & Gemini
 
 class WorkerLogger(logging.Logger):
     def __init__(self):

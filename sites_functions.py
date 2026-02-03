@@ -12,6 +12,9 @@ from typing import Tuple, Optional, Dict
 # 2. Restored Heuristic Date Fallback for missing FITS headers.
 # 3. Optimized I/O using Pandas engine for RAID 0 performance.
 # Author : SDG & Gemini
+#
+# Date: Tuesday 3rd February 2026
+# Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
 
 def initialize_sites(headers_state: Dict, logger) -> Dict:
     """Initializes the sites processing state for handling location data.

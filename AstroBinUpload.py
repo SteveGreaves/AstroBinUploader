@@ -35,12 +35,15 @@ from utils import initialise_logging, summarize_session, utils_version
 #    compatibility while maintaining legacy fuzzy-matching accuracy.
 # 4. Verified 1:1 parity with reference datasets across 24 observation sessions.
 # Author : SDG & Gemini
+#
+# Date: Tuesday 3rd February 2026
+# Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
 
 
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
-version = '1.4.2'
+version = '1.4.3'
 
 # Determine the script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))

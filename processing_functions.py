@@ -27,6 +27,9 @@ import numpy as np
 # 2. Restored Heuristic Date Fallback for missing FITS headers.
 # 3. Optimized I/O using Pandas engine for RAID 0 performance.
 # Author : SDG & Gemini
+#
+# Date: Tuesday 3rd February 2026
+# Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
 
 def initialize_processing(headers_state: Dict, logger) -> Dict:
     """
@@ -141,12 +144,10 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
             df.loc[:, 'num_days'] = 0
         # Convert date-obs to datetime, handling multiple formats
         try:
-            df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
-            if df['date-obs'].isna().any():
-                try:
-                    df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], format='%Y-%m-%dT%H:%M:%S.%f', errors='coerce')
-                except ValueError:
-                    df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], infer_datetime_format=True, errors='coerce')
+            df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], errors='coerce')
+            if df['date-obs'].isna().all():
+                logger.warning("All dates failed parsing. Using default date.")
+                df.loc[:, 'date-obs'] = pd.to_datetime(default_date)
         except Exception as e:
             logger.error(f"Error converting date-obs to datetime: {e}")
             df.loc[:, 'date-obs'] = default_date
@@ -392,6 +393,16 @@ def create_astrobin_output(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         if df.empty:
             logger.info("No data found")
             return pd.DataFrame()
+
+        # Normalization of matching keys (gain, sensorCooling)
+        # Force gain and sensorCooling to be integers for matching
+        for col in ['gain', 'sensorCooling']:
+            if col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round().astype(int)
+                    logger.info(f"Normalized {col} to integer values for matching.")
+                except Exception as e:
+                    logger.warning(f"Could not normalize {col}: {e}")
 
         # Get filter dictionary from configuration
         filters_dict = state['headers_state']['config']['filters']
