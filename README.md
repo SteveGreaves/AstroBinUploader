@@ -9,6 +9,7 @@
         - [[filters]](#filters)
         - [[secrets]](#secrets)
         - [[sites]](#sites)
+        - [[override]](#override) 
         - [Editing the initial config.ini](#editing-the-initial-configini)
 - [Running the Script](#running-the-script)
     - [Initialization](#initialization-no-arguments-are-passed)
@@ -140,6 +141,10 @@ The secret section holds:
 ### **[sites]**
 The [sites] section holds historic site information found by the script. When a script is run it first looks here to collect site information. Only if a site found in the headers does not exist does it access the external API's. The script automatically updates this section if a new site is found. The user does not usually have to edit this section, but remote site information can be added here if the script cannot access the API.
 
+### **[override]**
+
+The [override] section provides a translation layer that allows you to map non-standard FITS keywords to the internal keywords used by the script. This is particularly useful for capture software or camera drivers that utilize alternative naming conventions for standard parameters. For example:
+
 It is advisable to back up you config.ini file regularly. 
 
 
@@ -247,6 +252,18 @@ If the script is run and a new site identified the script will update the [sites
                 sqm = 20.52
 ```
 When the script processes [SITELAT] and [SITELONG] header entries it looks here first to see if a site has been seen before. If it has the script uses the site information found, if not it calls the external APIs to retrieve the information. If the external API call fails the script falls back to site parameters found in the [defaults] section of the configs.ini file. New sites can also be manually added in the [sites] section following the format shown above.
+
+```
+[override]
+
+        # Internal Key = Alternative FITS Keyword
+        SITE = SITENAME
+        EXPOSURE = EXPTIME
+        INSTRUME = CAMERA_MODEL
+```
+The [override] section provides a translation layer that allows you to map non-standard FITS keywords to the internal keywords used by the script. This is particularly useful for capture software or camera drivers that utilize alternative naming conventions for standard parameters.
+
+
 
 ## **Running the Script**
 
