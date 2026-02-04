@@ -1,5 +1,8 @@
 # AstroBinUpload Change Log
 
+## v1.4.4 (2026-02-04)
+- **Fix**: Resolved DatetimeArray type mismatch in aggregate_parameters by forcing an explicit string cast on the date-obs column. This prevents crashes on systems where Pandas auto-detects dates with high-precision (e.g., datetime64[us]).
+
 ## v1.4.3 (2026-02-03)
 - **Logic Restoration**: Re-implemented robust date parsing to prevent session collapsing (Fix for 1900-01-01 default).
 - **Calibration Handshake**: Fixed Dark/Bias frame matching by normalizing Gain and Cooling to rounded integers (Fix for float mismatch).

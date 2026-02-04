@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.3'
+utils_version = '1.4.4'
 #
 # Date: Sunday 1st February 2026
 # Modification : v1.4.2 Restoration & Logic Overhaul.

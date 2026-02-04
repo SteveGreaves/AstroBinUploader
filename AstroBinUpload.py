@@ -43,7 +43,7 @@ from utils import initialise_logging, summarize_session, utils_version
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
-version = '1.4.3'
+version = '1.4.4'
 
 # Determine the script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))

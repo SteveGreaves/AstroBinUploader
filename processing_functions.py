@@ -4,7 +4,7 @@ from dateutil.parser import parse
 from typing import Dict, Union
 import numpy as np
 
-
+processing_version = '1.4.4'
 
 # Changes:
 # Date: Thursday 25th September 2024
@@ -101,6 +101,11 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         df = df.copy()
         df.columns = df.columns.str.lower()
         logger.info("Standardized column names to lower case")
+        
+        # Fix: Ensure date-obs is string to prevent datetime64[us] issues
+        if 'date-obs' in df.columns:
+            df['date-obs'] = df['date-obs'].astype(str)
+            
         # Calculate observation statistics
         threshold = timedelta(hours=5)
         date_strings = df[df['imagetyp'] == 'LIGHT']['date-obs']
