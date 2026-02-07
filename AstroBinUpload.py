@@ -66,7 +66,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AstroBin Upload Utility")
     parser.add_argument('directory_paths', nargs='+', help='Directory paths to process')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-    parser.add_argument('--test-csv', type=str, help='Diagnostic flag to inject a CSV of headers (e.g., flame_basic_headers.csv) instead of scanning directories.')
+    parser.add_argument('--test', type=str, help='Diagnostic flag to inject a CSV of headers (e.g., flame_basic_headers.csv) from the first directory path instead of scanning.')
     
     args = parser.parse_args()
 
@@ -189,13 +189,14 @@ def main() -> None:
     logger.info("Reading FITS headers...")
     print('\nReading FITS headers...\n')
     try:
-        if args.test_csv:
-            headers_df = pd.read_csv(args.test_csv)
+        if args.test:
+            test_csv_path = os.path.join(output_dir, args.test)
+            headers_df = pd.read_csv(test_csv_path)
             # Normalize column names to uppercase to match internal expectations
             headers_df.columns = [c.upper() for c in headers_df.columns]
             
-            print(f"DEBUG: Loaded {len(headers_df)} headers from {args.test_csv}")
-            logger.info(f"Loaded {len(headers_df)} headers from {args.test_csv}")
+            print(f"DEBUG: Loaded {len(headers_df)} headers from {test_csv_path}")
+            logger.info(f"Loaded {len(headers_df)} headers from {test_csv_path}")
             
             if 'IMAGETYP' in headers_df.columns:
                 print(f"DEBUG: Unique IMAGETYP values (pre-conditioning): {headers_df['IMAGETYP'].unique()}")

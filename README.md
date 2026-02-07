@@ -290,7 +290,7 @@ The script expects to find all data contained in the directory passed to it. Sym
 
 All directory arguments are assumed to belong to one target. Again the first directory leaf, or child directory name should contain the target name for the output files to be named correctly.
 
-### **Debug output**
+    ### **Debug output**
 
     python3 AstroBinUpload.py "dir 1" "dir 2" ... --debug
 
@@ -303,6 +303,11 @@ This will dump four processed header files to the AstroBinUploadInfo directory  
 
 These files can be used to assist the debugging of any issues
 
+### **Diagnostic Test Mode**
+
+    python3 AstroBinUpload.py "/path/to/data/dir" --test headers.csv
+
+You can inject a CSV of headers for diagnostic purposes instead of scanning directories using the `--test` flag. This requires a valid directory path and a filename (e.g., a CSV exported via `--debug` in a previous run). The script will look for the CSV file inside the first directory path provided. Outputs, including the acquisition.csv and summary, will be written to the `AstroBinUploadInfo` folder within that same directory.
 <div style="page-break-after: always;"></div>
 
 # **Example calls and outputs**
