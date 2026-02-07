@@ -72,16 +72,15 @@ def main() -> None:
 
     DEBUG = args.debug
 
-    # Validate directory paths
-    directory_paths = args.directory_paths
-    if directory_paths[0] == ".":
+    # Validate and clean directory paths
+    directory_paths = [os.path.abspath(os.path.expanduser(p.strip())) for p in args.directory_paths]
+    
+    # Handle the "." case if it was explicitly passed as the first argument
+    if args.directory_paths[0] == ".":
         directory_paths[0] = os.getcwd()
 
     # Output directory is the first argument
     output_dir = directory_paths[0]
-
-    # Ensure the output directory path is absolute
-    output_dir = os.path.abspath(output_dir)
 
     # Construct the path for the new directory
     output_dir_path = os.path.join(output_dir, 'AstroBinUploadInfo')

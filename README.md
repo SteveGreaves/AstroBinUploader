@@ -308,6 +308,16 @@ These files can be used to assist the debugging of any issues
     python3 AstroBinUpload.py "/path/to/data/dir" --test headers.csv
 
 You can inject a CSV of headers for diagnostic purposes instead of scanning directories using the `--test` flag. This requires a valid directory path and a filename (e.g., a CSV exported via `--debug` in a previous run). The script will look for the CSV file inside the first directory path provided. Outputs, including the acquisition.csv and summary, will be written to the `AstroBinUploadInfo` folder within that same directory.
+
+## **Diagnostic & Testing**
+
+If you encounter issues during processing, it is recommended to run the script with the `--debug` flag. This will generate several CSV files in the `AstroBinUploadInfo` folder, including `basic_headers.csv`.
+
+To verify a fix or troubleshoot specific data without re-scanning thousands of files, you can use the test mode:
+
+`python3 AstroBinUpload.py "/path/to/directory" --test "basic_headers.csv"`
+
+**Note:** The CSV file (e.g., `basic_headers.csv`) MUST be located inside the directory being passed as the first argument to the script.
 <div style="page-break-after: always;"></div>
 
 # **Example calls and outputs**
