@@ -3,6 +3,7 @@ import numpy as np
 import requests
 import math
 import sys
+import logging
 from geopy.geocoders import Nominatim
 from typing import Tuple, Optional, Dict
 #
@@ -16,28 +17,21 @@ from typing import Tuple, Optional, Dict
 # Date: Tuesday 3rd February 2026
 # Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
 
-def initialize_sites(headers_state: Dict, logger) -> Dict:
-    """Initializes the sites processing state for handling location data.
+def initialize_sites(headers_state: Dict, logger: logging.Logger) -> Dict:
+    """
+    Initializes the site processing engine, including geocoding and sky quality API state.
 
-    Sets up a dictionary containing the headers state, logger, existing sites DataFrame, geolocator,
-    and placeholder for location information.
+    This function prepares:
+    1. The 'EMAIL_ADDRESS' for Nominatim reverse geocoding (required by OSM terms of service).
+    2. The local database of previously seen sites from the 'sites' section of config.ini.
+    3. The geolocator instance.
 
     Args:
-        headers_state (Dict): Dictionary containing headers state from headers_functions, including
-            configuration with 'secret' and 'sites' sections.
-        logger: Logger object for logging messages.
+        headers_state (Dict): Application state containing configuration and precision settings.
+        logger (logging.Logger): Application logger.
 
     Returns:
-        Dict: Dictionary containing initialized sites state with keys:
-            - headers_state: The input headers state.
-            - logger: The logger object.
-            - existing_sites_df: DataFrame of existing sites from configuration.
-            - geolocator: Nominatim geolocator instance for reverse geocoding.
-            - location_info: Placeholder for location data (initially None).
-
-    Raises:
-        ValueError: If headers_state is not a dictionary or logger is invalid.
-        KeyError: If required configuration keys (e.g., 'secret', 'sites') are missing.
+        Dict: Initialized sites state dictionary.
     """
     # Log start of sites initialization
     logger.info("")
@@ -46,20 +40,20 @@ def initialize_sites(headers_state: Dict, logger) -> Dict:
     try:
         # Extract email address from configuration for geolocator user agent
         email_address = headers_state['config']['secret']['EMAIL_ADDRESS'].strip()
-        # Create DataFrame from existing sites in configuration
+        # Create DataFrame from existing sites in configuration for high-speed local lookup.
         existing_sites_df = pd.DataFrame(headers_state['config']['sites'])
         logger.info("Existing sites DataFrame created")
     except Exception as e:
-        # Handle errors (e.g., missing 'secret' or 'sites' keys) by initializing an empty DataFrame
+        # Fallback to an empty DataFrame if no 'sites' section exists yet.
         existing_sites_df = pd.DataFrame()
         logger.warning(f"Failed to create existing sites DataFrame, initialized as empty: {str(e)}")
 
     try:
-        # Initialize Nominatim geolocator with user agent based on email address
+        # Initialize Nominatim geolocator with a custom user agent to comply with usage policies.
         geolocator = Nominatim(user_agent=f"AstroBinUpload.py_{email_address}")
         logger.info("Geolocator initialized")
     except Exception as e:
-        # Handle geolocator initialization errors (e.g., invalid email) and set to None
+        # If geocoding is unavailable (e.g. no internet), we set it to None and fall back to config defaults.
         logger.error(f"Failed to initialize geolocator: {str(e)}")
         geolocator = None
 
@@ -72,21 +66,20 @@ def initialize_sites(headers_state: Dict, logger) -> Dict:
         'location_info': None
     }
 
-def find_location_by_coords(sites_df: pd.DataFrame, lat_long_pair: Tuple[float, float], logger) -> Optional[pd.DataFrame]:
-    """Finds a location in the sites DataFrame matching the given latitude and longitude pair.
+def find_location_by_coords(sites_df: pd.DataFrame, lat_long_pair: Tuple[float, float], logger: logging.Logger) -> Optional[pd.DataFrame]:
+    """
+    Performs a fuzzy coordinate match against the local database of known sites.
 
-    Matches coordinates by rounding to one decimal place for approximate equality.
+    Coordinates are matched by rounding to one decimal place (~11km precision) to account 
+    for slight dithering or variation in mount reporting.
 
     Args:
-        sites_df (pd.DataFrame): DataFrame containing site data with 'latitude' and 'longitude' columns.
-        lat_long_pair (Tuple[float, float]): Tuple of (latitude, longitude) to match.
-        logger: Logger object for logging messages.
+        sites_df (pd.DataFrame): The local site database (transposed).
+        lat_long_pair (Tuple[float, float]): (Latitude, Longitude) from the FITS header.
+        logger (logging.Logger): Application logger.
 
     Returns:
-        Optional[pd.DataFrame]: DataFrame of matching rows, or None if no match is found.
-
-    Raises:
-        ValueError: If sites_df is not a pandas DataFrame or lat_long_pair is not a valid tuple.
+        Optional[pd.DataFrame]: The matching site data if found, otherwise None.
     """
     try:
         # Validate that sites_df is a pandas DataFrame
@@ -98,7 +91,7 @@ def find_location_by_coords(sites_df: pd.DataFrame, lat_long_pair: Tuple[float, 
 
         # Extract target latitude and longitude
         target_lat, target_long = lat_long_pair
-        # Find rows where latitude and longitude match within one decimal place
+        # Fuzzy Matching: Matches coordinates within ~0.1 degrees to handle minor mount inconsistencies.
         matching_rows = sites_df[
             (np.ceil(sites_df['latitude'] * 10) / 10 == np.ceil(target_lat * 10) / 10) &
             (np.ceil(sites_df['longitude'] * 10) / 10 == np.ceil(target_long * 10) / 10)
@@ -110,7 +103,7 @@ def find_location_by_coords(sites_df: pd.DataFrame, lat_long_pair: Tuple[float, 
                        f"Latitude {matching_rows['latitude'].iloc[0]}, "
                        f"Longitude {matching_rows['longitude'].iloc[0]}")
             return matching_rows
-        # Return None if no match is found
+        # Return None if no match is found, triggering a remote API lookup.
         logger.info(f"No matching location found for coordinates: {lat_long_pair}")
         return None
 
@@ -119,100 +112,81 @@ def find_location_by_coords(sites_df: pd.DataFrame, lat_long_pair: Tuple[float, 
         logger.error(f"Error finding location by coordinates {lat_long_pair}: {str(e)}")
         return None
 
-def get_bortle_sqm(lat: float, lon: float, api_key: str, api_endpoint: str, logger) -> Tuple[int, float, Optional[str], bool, bool]:
-    """Retrieves Bortle scale and SQM value for given coordinates using an external API.
+def get_bortle_sqm(lat: float, lon: float, api_key: str, api_endpoint: str, logger: logging.Logger) -> Tuple[int, float, Optional[str], bool, bool]:
+    """
+    Retrieves the sky quality metrics (Bortle Scale and SQM) for a specific coordinate.
 
-    Makes an API request to retrieve artificial brightness, calculates SQM, and converts to Bortle scale.
+    This function calls the lightpollutionmap.info API to get artificial brightness,
+    then applies the standard conversion formula to derive the mag/arcsec^2 (SQM) value.
 
     Args:
-        lat (float): Latitude coordinate.
-        lon (float): Longitude coordinate.
-        api_key (str): API key for the geolocation service.
-        api_endpoint (str): API endpoint URL for the geolocation service.
-        logger: Logger object for logging messages.
+        lat (float): Latitude.
+        lon (float): Longitude.
+        api_key (str): 16-character alphanumeric key.
+        api_endpoint (str): API URL.
+        logger (logging.Logger): Application logger.
 
     Returns:
-        Tuple[int, float, Optional[str], bool, bool]: Tuple containing:
-            - Bortle scale (int): Bortle class (1-9).
-            - SQM value (float): Sky Quality Meter value in mag/arcsec².
-            - Error message (Optional[str]): Error message if API call fails, else None.
-            - API key validity (bool): Whether the API key is valid.
-            - Endpoint validity (bool): Whether the API endpoint is valid.
-
-    Raises:
-        ValueError: If lat, lon, api_key, or api_endpoint are invalid.
+        Tuple[int, float, Optional[str], bool, bool]: 
+            (Bortle Class, SQM Value, Error Message, Key Valid Flag, Endpoint Valid Flag).
     """
     # Log start of Bortle and SQM retrieval
     logger.info("")
     logger.info("GETTING BORTLE SCALE AND SQM VALUE")
     logger.info(f"Retrieving Bortle scale and SQM for coordinates ({lat}, {lon})")
 
-    # Define helper function to validate API key (16 alphanumeric characters)
+    # Helper function to validate 16-character API keys.
     def is_valid_api_key(api_key: str) -> bool:
         return api_key is not None and len(api_key) == 16 and api_key.isalnum()
 
-    # Define helper function to validate API endpoint (non-empty string)
+    # Helper function to validate endpoint strings.
     def is_valid_api_endpoint(api_endpoint: str) -> bool:
         return bool(api_endpoint and api_endpoint.strip())
 
     try:
-        # Validate input types
+        # Type Validation
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
             raise ValueError("Latitude and longitude must be numbers")
         if not isinstance(api_key, str) or not isinstance(api_endpoint, str):
             raise ValueError("API key and endpoint must be strings")
 
-        # Check API key and endpoint validity
+        # Step 1: Validation
         api_valid = is_valid_api_key(api_key)
         api_endpoint_valid = is_valid_api_endpoint(api_endpoint)
 
-        # Handle invalid API key and endpoint cases
-        if not api_valid and not api_endpoint_valid:
-            logger.error("Both API key and API endpoint are invalid")
-            return 0, 0, "Both API key and API endpoint are invalid", api_valid, api_endpoint_valid
-        elif not api_valid:
-            logger.error("API key is malformed")
-            return 0, 0, "API key is malformed", api_valid, api_endpoint_valid
-        elif not api_endpoint_valid:
-            logger.error("API endpoint is empty")
-            return 0, 0, "API endpoint is empty", api_valid, api_endpoint_valid
+        if not api_valid or not api_endpoint_valid:
+            logger.error("API Key or Endpoint is invalid/missing.")
+            return 0, 0, "Invalid credentials", api_valid, api_endpoint_valid
 
-        # Prepare API request parameters
+        # Step 2: Remote Request
+        # Parameters for lightpollutionmap.info: wa_2015 is the standard World Atlas dataset.
         params = {'ql': 'wa_2015', 'qt': 'point', 'qd': f'{lon},{lat}', 'key': api_key}
         logger.info("Sending request to API endpoint")
-        # Make API request
         response = requests.get(api_endpoint, params=params)
         response.raise_for_status()
 
-        # Check for authentication error
+        # Handle specific API error responses
         if response.text.strip() == 'Invalid authentication.':
             logger.error("Authentication error: Missing or invalid API key")
-            return 0, 0, "Authentication error: Missing or invalid API key", False, api_endpoint_valid
+            return 0, 0, "Authentication error", False, api_endpoint_valid
 
-        # Parse artificial brightness from response
+        # Step 3: Math Conversion
+        # artificial_brightness is returned as a raw float.
         artificial_brightness = float(response.text)
-        # Calculate SQM (Sky Quality Meter) value using formula
+        
+        # Formula: mag/arcsec^2 = (log10((artificial_brightness + constant) / scaler) / -0.4)
         sqm = round((math.log10((artificial_brightness + 0.171168465) / 108000000) / -0.4), 2)
-        # Convert SQM to Bortle scale
+        
+        # Derive Bortle scale from the calculated SQM value.
         bortle_class = round(sqm_to_bortle(sqm, logger), 2)
         logger.info(f"Retrieved Bortle scale: {bortle_class}, SQM value: {sqm}")
         return bortle_class, sqm, None, api_valid, api_endpoint_valid
 
-    except requests.exceptions.HTTPError as err:
-        # Handle HTTP errors (e.g., 404, 500)
-        logger.error(f"HTTP Error: {err}")
-        return 0, 0, f"HTTP Error: {err}", api_valid, False
-    except ValueError as e:
-        # Handle errors converting response to float
-        logger.error(f"Could not convert response to float: {str(e)}")
-        return 0, 0, f"Could not convert response to float: {str(e)}", api_valid, api_endpoint_valid
     except requests.exceptions.RequestException as e:
-        # Handle other request errors (e.g., connection issues)
-        logger.error(f"Request Error: {str(e)}")
+        logger.error(f"Network error during sky quality lookup: {str(e)}")
         return 0, 0, f"Request Error: {str(e)}", api_valid, api_endpoint_valid
     except Exception as e:
-        # Handle unexpected errors
-        logger.error(f"An error occurred: {str(e)}")
+        logger.error(f"An unexpected error occurred: {str(e)}")
         return 0, 0, f"An error occurred: {str(e)}", api_valid, api_endpoint_valid
 
 def sqm_to_bortle(sqm: float, logger) -> int:

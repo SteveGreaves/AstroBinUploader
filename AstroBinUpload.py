@@ -60,8 +60,19 @@ DEBUG = False
 
 def main() -> None:
     """
-    Main function to process directories containing FITS files, aggregate parameters,
-    get site data, summarize the session, and export the summary and AstroBin data.
+    Main entry point for the AstroBin Upload Utility.
+    
+    This function orchestrates the entire workflow:
+    1. Parses command-line arguments (directories, debug mode, diagnostic test mode).
+    2. Normalizes and validates input directory paths.
+    3. Initializes logging, configuration, and state for headers, processing, and sites.
+    4. Extracts or injects (in test mode) FITS/XISF header data.
+    5. Performs site data lookup and parameter aggregation.
+    6. Generates a detailed session summary and AstroBin-compatible acquisition CSV.
+    7. Exports results to the specified output directory.
+
+    Returns:
+        None
     """
     parser = argparse.ArgumentParser(description="AstroBin Upload Utility")
     parser.add_argument('directory_paths', nargs='+', help='Directory paths to process')
@@ -70,25 +81,31 @@ def main() -> None:
     
     args = parser.parse_args()
 
-    # Clean the input paths to be immune to trailing spaces or slashes
+    # Step 1: Path Normalization & Hardening
+    # We apply .strip() to remove any accidental leading/trailing spaces,
+    # and .normpath() to resolve redundant separators and up-level references.
+    # This ensures the script is immune to trailing spaces or slashes provided by the user.
     args.directory_paths = [os.path.normpath(p.strip()) for p in args.directory_paths]
 
     DEBUG = args.debug
 
-    # Validate and clean directory paths
+    # Step 2: Absolute Path Resolution
+    # We use .expanduser() for tilde (~) support and .abspath() to ensure consistent path handling
+    # throughout the application, regardless of the current working directory.
     directory_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.directory_paths]
     
-    # Handle the "." case if it was explicitly passed as the first argument
+    # Handle the special "." case: if the first argument is ".", we explicitly set it to the CWD
     if args.directory_paths[0] == ".":
         directory_paths[0] = os.getcwd()
 
-    # Output directory is the first argument
+    # Step 3: Output Directory Setup
+    # The primary directory (first argument) serves as the root for our output subdirectory.
     output_dir = directory_paths[0]
+    output_dir = os.path.abspath(output_dir)
 
-    # Construct the path for the new directory
+    # All generated files are stored in 'AstroBinUploadInfo' to keep the project directory clean.
     output_dir_path = os.path.join(output_dir, 'AstroBinUploadInfo')
 
-    # Create the output directory if it does not exist
     try:
         os.makedirs(output_dir_path, exist_ok=True)
         print(f"Output directory: {output_dir_path}")
@@ -96,17 +113,14 @@ def main() -> None:
         print(f"Error creating output directory: {str(e)}")
         sys.exit(1)
 
-    # Set LOGFILENAME based on the output directory
+    # Initialize Logging: Captures debug and info messages for troubleshooting.
     LOGFILENAME = os.path.join(output_dir_path, 'AstroBinUploader.log')
-
-    # Create the directory for the log file
     try:
         os.makedirs(os.path.dirname(LOGFILENAME), exist_ok=True)
     except Exception as e:
         print(f"Error creating log directory: {str(e)}")
         sys.exit(1)
 
-    # Initialize logging
     try:
         logger = initialise_logging(LOGFILENAME)
         if DEBUG:
@@ -123,7 +137,8 @@ def main() -> None:
         print(f"Error initializing logging: {str(e)}")
         sys.exit(1)
 
-    # Validate directory paths
+    # Step 4: Directory Validation
+    # Ensure all provided paths actually exist and are directories before proceeding.
     for directory in directory_paths:
         if not os.path.exists(directory):
             err = f"The path '{directory}' does not exist. Exiting the program."
@@ -137,7 +152,7 @@ def main() -> None:
             sys.exit(1)
         logger.info(f"Processing directory: {directory}")
 
-    # Check version compatibility
+    # Version Synchronization: Crucial for maintaining RAID 0 protection and feature parity.
     if utils_version != version:
         err = f"Error: utils version is {utils_version} and must be {version}"
         logger.error(err)
@@ -145,7 +160,8 @@ def main() -> None:
         logger.error("Exiting the program.")
         sys.exit(1)
 
-    # Initialize config
+    # Initialize Core Components
+    # We load configuration, header parsing logic, and processing algorithms.
     try:
         config, change = initialise_config(CONFIGFILENAME, logger)
         if change:
@@ -157,7 +173,6 @@ def main() -> None:
         print(f"Error initializing configuration: {str(e)}")
         sys.exit(1)
 
-    # Initialize headers state
     try:
         headers_state = initialize_headers(config, logger, PRECISION)
         logger.info("Headers state initialized")
@@ -167,7 +182,6 @@ def main() -> None:
         print(f"Error initializing headers state: {str(e)}")
         sys.exit(1)
 
-    # Initialize processing state
     try:
         processing_state = initialize_processing(headers_state, logger)
         logger.info("Processing state initialized")
@@ -177,7 +191,6 @@ def main() -> None:
         print(f"Error initializing processing state: {str(e)}")
         sys.exit(1)
 
-    # Initialize sites state
     try:
         sites_state = initialize_sites(headers_state, logger)
         logger.info("Sites state initialized")
@@ -187,11 +200,14 @@ def main() -> None:
         print(f"Error initializing sites state: {str(e)}")
         sys.exit(1)
 
-    # Extract FITS headers
+    # Step 5: Data Acquisition (FITS Headers vs. Diagnostic Test)
     logger.info("Reading FITS headers...")
     print('\nReading FITS headers...\n')
     try:
         if args.test:
+            # Diagnostic Test Mode: Injects a pre-processed CSV instead of scanning the disk.
+            # This is essential for troubleshooting without needing the original FITS files.
+            # The CSV must reside in the first directory provided.
             test_csv_path = os.path.join(output_dir, args.test)
             headers_df = pd.read_csv(test_csv_path)
             # Normalize column names to uppercase to match internal expectations
@@ -203,7 +219,8 @@ def main() -> None:
             if 'IMAGETYP' in headers_df.columns:
                 print(f"DEBUG: Unique IMAGETYP values (pre-conditioning): {headers_df['IMAGETYP'].unique()}")
             
-            # Condition headers to ensure all columns (FWHM, HFR, etc.) and normalizations are applied
+            # Condition headers: Re-runs the normalization pipeline (FWHM, HFR, etc.) on the CSV data
+            # to ensure parity with a real directory scan.
             from headers_functions import condition_headers
             headers_list = headers_df.to_dict('records')
             headers_df = condition_headers(headers_list, headers_state)
@@ -213,6 +230,7 @@ def main() -> None:
                 light_count = len(headers_df[headers_df['IMAGETYP'] == 'LIGHT'])
                 print(f"DEBUG: Number of 'LIGHT' frames (post-conditioning): {light_count}")
         else:
+            # Standard Mode: Recursively scans provided directories for FITS/XISF files.
             headers_df, basic_headers = process_directories(directory_paths, headers_state)
     except Exception as e:
         logger.error(f"Error processing directories: {str(e)}")

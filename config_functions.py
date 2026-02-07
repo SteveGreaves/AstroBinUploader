@@ -187,23 +187,23 @@ def cast_section(section: Dict[Any, Any], logger: Optional[logging.Logger] = Non
         raise
 
 def initialise_config(filename: str, logger: Optional[logging.Logger] = None) -> Tuple[ConfigObj, bool]:
-    """Initializes a configuration file, creating it with default values if it does not exist.
-
-    Reads an existing configuration file or creates a new one using the default INI string.
-    Normalizes and casts configuration values to appropriate types.
+    """
+    Initializes the configuration file (typically config.ini) for the application.
+    
+    This function handles the first-run scenario by creating a template config file 
+    if one doesn't exist. It also ensures that an existing config file is normalized 
+    to the current version's expected structure.
 
     Args:
-        filename (str): Path to the configuration file (e.g., config.ini).
-        logger (logging.Logger, optional): Logger instance for logging messages. Defaults to None.
+        filename (str): The path to the configuration file.
+        logger (logging.Logger, optional): Application logger for status messages.
 
     Returns:
-        Tuple[ConfigObj, bool]: A tuple containing:
-            - ConfigObj: The initialized configuration object.
-            - bool: True if the configuration file was created or modified, False otherwise.
+        Tuple[ConfigObj, bool]: A tuple containing the initialized ConfigObj and a 
+                                boolean 'change' flag (True if a new file was created).
 
     Raises:
-        ValueError: If filename is not a non-empty string or logger is invalid.
-        OSError: If the configuration file cannot be read or written.
+        OSError: If the configuration file cannot be read or written to disk.
     """
     try:
         # Validate input types
@@ -220,14 +220,14 @@ def initialise_config(filename: str, logger: Optional[logging.Logger] = None) ->
         ini_string = get_default_ini_string(logger)
 
         try:
-            # Check if configuration file exists
+            # Step 1: Handle Missing Config File
             if not os.path.exists(filename):
                 logger.info(f"No configuration file found at {filename}, creating new one") if logger else None
-                # Create new ConfigObj from default INI string
+                # Create new ConfigObj from the hardcoded default template string
                 config = ConfigObj(StringIO(ini_string), encoding='utf-8')
                 config.filename = filename
                 try:
-                    # Write new configuration file
+                    # Persist the new default config to disk
                     config.write()
                     change = True
                     logger.info(f"Created configuration file: {filename}") if logger else None
@@ -235,13 +235,16 @@ def initialise_config(filename: str, logger: Optional[logging.Logger] = None) ->
                     logger.error(f"Failed to write configuration file {filename}: {str(e)}") if logger else None
                     raise OSError(f"Failed to write configuration file {filename}: {str(e)}")
             else:
-                # Read existing configuration file
+                # Step 2: Load Existing Config File
                 config = ConfigObj(filename, encoding='utf-8')
                 logger.info(f"Configuration file found at {filename}") if logger else None
 
-            # Correct configuration structure and normalize keys
+            # Step 3: Structural Correction
+            # Ensures section names are normalized and required keys (like SITELAT) are present.
             correct_config(config, logger)
-            # Cast configuration values to appropriate types
+            
+            # Step 4: Type Casting
+            # Converts string values from the INI (e.g. "5.4") into proper Python types (float 5.4).
             cast_section(config, logger)
             logger.info(f"Configuration object: {dict(config)}") if logger else None
             return config, change
@@ -257,24 +260,21 @@ def initialise_config(filename: str, logger: Optional[logging.Logger] = None) ->
         raise
 
 def update_config(config: ConfigObj, section: str, subsection: Optional[str], keys_values: Dict[str, Any], logger: Optional[logging.Logger] = None) -> bool:
-    """Updates a configuration section or subsection with new key-value pairs.
-
-    Adds or updates a section and optional subsection in the configuration, writes changes to the file,
-    and casts values to appropriate types.
+    """
+    Updates specific configuration settings and persists them to the config file.
+    
+    This is primarily used to dynamically update the [sites] section when a new 
+    observation location is geocoded.
 
     Args:
-        config (ConfigObj): Configuration object to update.
-        section (str): Name of the configuration section to update (e.g., 'sites').
-        subsection (Optional[str]): Name of the subsection to update, or None to generate a default name.
-        keys_values (Dict[str, Any]): Dictionary of key-value pairs to add or update.
-        logger (logging.Logger, optional): Logger instance for logging messages. Defaults to None.
+        config (ConfigObj): The active configuration object.
+        section (str): The top-level section name (e.g., 'sites').
+        subsection (Optional[str]): A nested subsection name (e.g., a specific address).
+        keys_values (Dict[str, Any]): A dictionary of settings to update or add.
+        logger (logging.Logger, optional): Application logger.
 
     Returns:
-        bool: True if changes were made to the configuration, False otherwise.
-
-    Raises:
-        ValueError: If config is not a ConfigObj, section/subsection is invalid, or keys_values is not a dictionary.
-        OSError: If the configuration file cannot be written.
+        bool: True if the configuration was actually modified and saved.
     """
     try:
         # Validate input types
@@ -294,19 +294,19 @@ def update_config(config: ConfigObj, section: str, subsection: Optional[str], ke
         # Initialize change flag
         change = False
 
-        # Add section if it does not exist
+        # Add section if it does not exist (e.g. creating the [sites] section for the first time)
         if section not in config:
             logger.info(f"Adding new section: {section}") if logger else None
             config[section] = {}
             change = True
 
-        # Generate default subsection name if not provided
+        # Fallback subsection name if none provided
         if not subsection:
             subsection = f"site{len(config[section]) + 1}"
             logger.info(f"No subsection provided, using default: {subsection}") if logger else None
             change = True
 
-        # Add empty line before section for formatting
+        # Formatting: Add empty line before section for better readability in the INI file
         config.comments[section] = ['']
 
         # Add or update subsection with key-value pairs
@@ -315,18 +315,19 @@ def update_config(config: ConfigObj, section: str, subsection: Optional[str], ke
             change = True
             logger.info(f"Added subsection {subsection} to section {section} with keys: {keys_values}") if logger else None
         else:
-            # Update existing keys if values differ
+            # Delta Check: Only update and save if the values have actually changed.
             for key, value in keys_values.items():
                 if key not in config[section][subsection] or config[section][subsection][key] != value:
                     config[section][subsection][key] = value
                     change = True
                     logger.info(f"Updated {key} in {section}/{subsection} to {value}") if logger else None
 
-        # Save changes and cast values if modified
+        # Step 5: Save changes
+        # If changes were detected, re-cast the section to ensure types remain correct, 
+        # then write the modified ConfigObj back to the filesystem.
         if change:
             cast_section(config, logger)
             try:
-                # Write updated configuration to file
                 config.write()
                 logger.info(f"Saved updated configuration to {config.filename}") if logger else None
             except OSError as e:

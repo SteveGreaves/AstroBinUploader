@@ -372,19 +372,22 @@ def clean_object_column(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFram
         return df
 
 def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Processes headers of a FITS or XISF file.
+    """
+    Directly extracts and normalizes the header from a single FITS or XISF file.
 
-    Extracts headers, normalizes keys, applies default values, and reduces to wanted keys.
+    The function determines the file type, opens it, and performs initial normalization:
+    1. Maps alternative keys (e.g., CREATOR -> SWCREATE) using config 'override' rules.
+    2. Identifies Master files and their internal image counts (NUMBER).
+    3. Normalizes IMAGETYP strings (e.g., 'Light Frame' -> 'LIGHT').
+    4. Drops non-essential metadata to reduce memory footprint.
 
     Args:
-        file_path (str): Path to the FITS or XISF file.
-        state (Dict[str, Any]): Dictionary containing headers state with config, logger, etc.
+        file_path (str): The absolute path to the FITS or XISF file.
+        state (Dict[str, Any]): Dictionary containing config and logger.
 
     Returns:
-        Optional[Dict[str, Any]]: Reduced header dictionary, or None if an error occurs.
-
-    Raises:
-        ValueError: If file_path is not a non-empty string, state is not a dictionary, or required state keys are missing.
+        Optional[Dict[str, Any]]: A reduced dictionary of normalized header keys, 
+                                  or None if the file is invalid or a 'master light'.
     """
     try:
         # Validate input types
@@ -399,51 +402,47 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
 
         # Extract config and logger from state
         config, logger = state['config'], state['logger']
-        # Initialize number of images to 1
+        # Initialize number of images to 1 (default for non-master files)
         state['number'] = 1
-        # Define wanted keys from config defaults and additional keys
+        # Define wanted keys from config defaults and additional mandatory tracking keys
         state['wanted_keys'] = list(config['defaults'].keys()) + ['FILENAME', 'NUMBER']
-        # Check if USEOBSDATE is disabled in config
+        
+        # USEOBSDATE override logic
         if config['defaults'].get('USEOBSDATE', 'TRUE').lower() == 'false':
             logger.debug("USEOBSDATE is set to False")
             state['useobsdate'] = False
             if 'USEOBSDATE' in state['wanted_keys']:
-                # Remove USEOBSDATE from wanted keys if disabled
                 state['wanted_keys'].remove('USEOBSDATE')
                 logger.debug("Removed USEOBSDATE from wanted_keys")
 
-        # Store filename for header
         state['header_filename'] = os.path.basename(file_path)
         logger.debug(f"Processing headers for file: {state['header_filename']}")
 
-        # Check if file exists
         if not os.path.isfile(file_path):
             logger.error(f"File {file_path} does not exist")
             return None
 
         # Initialize empty header dictionary
         hdr: Dict[str, Any] = {}
-        # Process FITS file
+        
+        # Type-Specific Processing
         if file_path.lower().endswith(('.fits', '.fit', '.fts')):
             try:
-                # Open FITS file and extract header
+                # FITS: Uses Astropy to open the file and extract the primary HDU header.
                 with fits.open(file_path) as hdul:
                     hdr = dict(hdul[0].header)
-                    # Extract calibration frame count from HISTORY
+                    # Extract calibration frame count from HISTORY (common in PixInsight masters)
                     hdr = get_number_of_FIT_cal_frames(hdr, logger)
                     logger.debug(f"Extracted FITS header from {file_path}")
             except OSError as e:
                 logger.error(f"Error reading FITS file {file_path}: {str(e)}")
                 return None
-        # Process XISF file
         elif file_path.lower().endswith('.xisf'):
-            # Read XML header
+            # XISF: Standard PixInsight format. Requires reading the XML header block.
             xml_header = read_xisf_header(file_path, logger)
             if xml_header:
-                # Parse XML header
                 result = xml_to_data(xml_header, logger)
                 if result:
-                    # Extract header and image count
                     hdr, state['number'] = result
                     logger.debug(f"Parsed XISF header from {file_path}")
                 else:
@@ -453,23 +452,21 @@ def process_headers(file_path: str, state: Dict[str, Any]) -> Optional[Dict[str,
                 logger.error(f"No XISF header found for {file_path}")
                 return None
         else:
-            # Log unsupported file extension
             logger.warning(f"Unsupported file extension for {file_path}")
             return None
 
-        # Check for IMAGETYP key
+        # Basic Validation
         if 'IMAGETYP' not in hdr:
             logger.warning(f"IMAGETYP key not found in header for {file_path}")
             return None
         
-        # Drop header if it contains 'master light' in IMAGETYP
-        # added 2026 to stope code counting master light frames, as these have no useful date information actual light frames must be used
+        # Hard Filter: Drop 'master light' frames.
+        # These are final integrated images and contain no useful session-level metadata.
         if 'master light' in hdr['IMAGETYP'].lower():
             logger.debug(f"Dropping header for {file_path} as it contains 'master light' in IMAGETYP")
             return None
 
-        # Normalize IMAGETYP for LIGHT frames
-        # modified 2026-09-26 to allow any variant of light frame name to be recognised
+        # Normalize IMAGETYP for LIGHT frames: Standardizes 'Light Frame', 'LIGHTFRAME', etc. to 'LIGHT'.
         if 'light' in hdr['IMAGETYP'].lower():
             hdr['IMAGETYP'] = 'LIGHT'
             logger.debug("Converted IMAGETYP to LIGHT")
@@ -733,19 +730,25 @@ def count_subdirectories(root: str, logger: logging.Logger) -> int:
         return 0
 
 def process_directories(directories: List[str], state: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Processes multiple directories to extract and condition headers.
+    """
+    Crawls multiple directories to extract, normalize, and condition FITS/XISF headers.
 
-    Iterates through directories, extracts headers, and applies conditioning steps.
+    This is the high-level entry point for data acquisition. It handles:
+    1. Recursive directory walking.
+    2. Parallelized header extraction using ProcessPoolExecutor (optimized for RAID 0).
+    3. Initial conditioning (deduplication, coordinate alignment).
 
     Args:
-        directories (List[str]): List of directory paths to process.
-        state (Dict[str, Any]): Dictionary containing headers state with logger, config, etc.
+        directories (List[str]): List of absolute directory paths to scan.
+        state (Dict[str, Any]): Dictionary containing header state, logger, and config.
 
     Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]: Tuple of conditioned headers DataFrame and raw headers DataFrame.
+        Tuple[pd.DataFrame, pd.DataFrame]: 
+            - Conditioned DataFrame: Cleaned and ready for aggregation.
+            - Raw DataFrame: Unfiltered results for debug logging.
 
     Raises:
-        ValueError: If directories is not a list of strings, state is not a dictionary, or required state keys are missing.
+        ValueError: If input arguments are malformed or missing required keys.
     """
     try:
         # Validate input types
@@ -766,7 +769,7 @@ def process_directories(directories: List[str], state: Dict[str, Any]) -> Tuple[
         headers: List[Dict[str, Any]] = []
         # Process each directory
         for directory in directories:
-            # Get real path to handle symlinks
+            # Get real path to handle symlinks (standard practice for PixInsight/NINA storage)
             real_dir = os.path.realpath(directory)
             if not os.path.isdir(real_dir):
                 logger.error(f"Directory {real_dir} does not exist or is not a directory")
@@ -775,37 +778,40 @@ def process_directories(directories: List[str], state: Dict[str, Any]) -> Tuple[
             headers.extend(process_directory(real_dir, state))
             logger.info(f"Processed directory {real_dir}")
 
-        # Create raw headers DataFrame
+        # Create raw headers DataFrame for auditing/debug purposes
         raw_headers_df = pd.DataFrame(headers)
         if raw_headers_df.empty:
             logger.warning("No headers extracted from directories")
             return pd.DataFrame(), raw_headers_df
 
-        # Condition headers
+        # Condition headers: Applies the core cleaning pipeline (deduplication, gain handshake, etc.)
         conditioned_headers = condition_headers(headers, state)
         logger.info("Completed processing directories")
 
         return conditioned_headers, raw_headers_df
 
     except Exception as e:
-        # Log and return empty DataFrames on error
+        # Log and return empty DataFrames on error to prevent application crash
         logger.error(f"Error processing directories: {str(e)}")
         return pd.DataFrame(), pd.DataFrame()
 
 def condition_headers(headers: List[Dict[str, Any]], state: Dict[str, Any]) -> pd.DataFrame:
-    """Conditions headers by applying calibration, flat frame, and duplicate processing.
+    """
+    Applies a series of data-cleansing filters to the extracted header list.
 
-    Applies a series of processing steps to clean and standardize header data.
+    The pipeline includes:
+    1. Calibration matching (filtering out irrelevant Darks/Bias).
+    2. Flat frame consolidation (summing Master Flat counts).
+    3. WBPP Deduplication (removing temporary calibrated/registered files).
+    4. Coordinate alignment (propagating Light coordinates to Calibration frames).
+    5. Gain standardization (Integer Gain Handshake).
 
     Args:
-        headers (List[Dict[str, Any]]): List of header dictionaries.
-        state (Dict[str, Any]): Dictionary containing headers state with config, logger, etc.
+        headers (List[Dict[str, Any]]): List of raw header dictionaries.
+        state (Dict[str, Any]): Dictionary containing config and logger.
 
     Returns:
-        pd.DataFrame: Conditioned headers DataFrame.
-
-    Raises:
-        ValueError: If headers is not a list, state is not a dictionary, or required state keys are missing.
+        pd.DataFrame: A highly normalized DataFrame ready for parameter aggregation.
     """
     try:
         # Validate input types
@@ -830,72 +836,67 @@ def condition_headers(headers: List[Dict[str, Any]], state: Dict[str, Any]) -> p
             logger.warning("No headers to condition")
             return headers_df
 
-        # Check for IMAGETYP column
+        # Check for IMAGETYP column (essential for all downstream logic)
         if 'IMAGETYP' not in headers_df.columns:
             logger.error("IMAGETYP column missing in headers DataFrame")
             return headers_df
 
-        # Check for LIGHT frames
+        # Check for LIGHT frames: If no lights are found, the session is considered invalid.
         if 'LIGHT' not in headers_df['IMAGETYP'].values:
             logger.warning("No LIGHT frames found in headers")
             return headers_df
         
-        #logger.debug(f"Headers in {headers_df}")
-
-        # Process calibration frames
+        # Step 1: Calibration Frame Filtering
+        # Drops Dark/Bias frames if their exposure doesn't match any Light frame.
         logger.info("Processing calibration frames")
         headers_df = deal_with_calibration_frames(headers_df, state)
 
-        #logger.debug(f"Headers after deal_with_calibration_frames {headers_df}")
-
-        # Process flat frames
+        # Step 2: Flat Consolidation
+        # Identifies Master Flats and sums their internal NUMBER counts if they match active Light filters.
         logger.info("Processing flat frames")
         headers_df = deal_with_flat_frames(headers_df, state)
-        #logger.debug(f"Headers after deal_with_flat_frames {headers_df}")
 
-        # Filter duplicate LIGHT frames
+        # Step 3: WBPP Deduplication
+        # PixInsight's WBPP script creates multiple versions of the same frame (_c, _cc, _r).
+        # We filter these to ensure each raw capture is only counted once.
         logger.info("Filtering duplicate LIGHT frames")
         headers_df = filter_and_remove_duplicates(headers_df, logger)
-        #logger.debug(f"Headers after filter_and_remove_duplicates {headers_df}")
 
-        # Convert IMAGETYP to uppercase
+        # Step 4: Normalization
         headers_df['IMAGETYP'] = headers_df['IMAGETYP'].str.upper()
         logger.info("Converted IMAGETYP to uppercase")
 
-        # Check and update camera gains
+        # Step 5: Gain Handshake
+        # Updates GAIN values based on EGAIN matches, resolving vendor-specific reporting differences.
         headers_df = check_camera_gains(headers_df, state)
         logger.info("Checked and updated camera gains")
-        #logger.debug(f"Headers after check_camera_gains {headers_df}")
 
-        # Apply default gains for invalid values
-        # 2025-09-26 Fix to correct EGAIN values being reported as -1 wnen correct EGAIN values were present
+        # Step 6: GAIN Defaulting
+        # Handles cases where GAIN was reported as -1 (signaling no data).
         headers_df.loc[headers_df['EGAIN'] == -1, 'EGAIN'] = config['defaults']['EGAIN']
         headers_df['EGAIN'] = headers_df['EGAIN'].abs()
-        #headers_df.loc[headers_df['GAIN'] == -1, 'EGAIN'] = config['defaults']['EGAIN']
         headers_df.loc[headers_df['GAIN'] == -1, 'GAIN'] = config['defaults']['GAIN']
         headers_df['GAIN'] = headers_df['GAIN'].abs()
         logger.info("Set GAIN to absolute value and applied defaults for negative gains")
 
-
-
-        # Extract HFR, IMSCALE, and FWHM
+        # Step 7: Optical Parameter Extraction
+        # Calculates FWHM and Image Scale based on HFR extracted from filenames.
         headers_df = get_HFR(headers_df, state)
         logger.info("Extracted HFR, IMSCALE, and FWHM values")
-        #logger.debug(f"Headers after  get_HFR {headers_df}")
 
-        # Align non-LIGHT frame coordinates
+        # Step 8: Coordinate Propagation
+        # Calibration frames often lack coordinates. We find the closest Light frame
+        # (spatially) and copy its coordinates to ensure reverse geocoding works.
         headers_df = modify_lat_long(headers_df, logger)
         logger.info("Aligned calibration frame lat/long with closest LIGHT frame")
-        #logger.debug(f"Headers after modify_lat_long {headers_df}")
 
-        # Clean OBJECT column
+        # Step 9: Object Cleaning
+        # Normalizes target names (e.g. 'M 31' vs 'M31') for consistent grouping.
         headers_df = clean_object_column(headers_df, logger)
         logger.info("Cleaned OBJECT column")
-        #logger.debug(f"Headers after clean_object_column {headers_df}")
         return headers_df
 
     except Exception as e:
-        # Log and return empty DataFrame on error
         logger.error(f"Error conditioning headers: {str(e)}")
         return pd.DataFrame()
 

@@ -24,29 +24,33 @@ utils_version = '1.4.5'
 #swapped rotator for rotname in equipment used function
 
 def initialise_logging(log_filename: str, logger: logging.Logger = None) -> logging.Logger:
-    """Initializes logging for the application with robust error handling.
-
-    Creates a logger that writes to a specified file with a consistent format.
-    Includes the calling function's name in log messages. Clears the existing log file
-    and configures the logger with a file handler.
+    """
+    Initializes a robust logging system that captures function names and line numbers.
+    
+    This logger:
+    1. Creates the log directory if it doesn't exist.
+    2. Clears previous session logs to keep files concise.
+    3. Uses a custom 'FunctionNameFilter' to resolve the true calling function 
+       (skipping standard library wrappers).
+    4. Sets up a FileHandler with UTF-8 encoding.
 
     Args:
-        log_filename (str): Path to the log file.
-        logger (logging.Logger, optional): Logger for pre-initialization errors. Defaults to None
+        log_filename (str): The absolute path where the log file will be stored.
+        logger (logging.Logger, optional): Pre-initialization logger for boot errors.
 
     Returns:
-        logging.Logger: Configured logger object.
+        logging.Logger: The configured application logger.
 
     Raises:
-        ValueError: If log_filename is empty or not a string.
-        OSError: If unable to create or write to the log file.
+        OSError: If the log file or directory is inaccessible.
     """
     errors = []
 
     # Custom filter to add function name to log records
     class FunctionNameFilter(logging.Filter):
         def filter(self, record):
-            # Get the call stack and find the calling function
+            # We traverse the call stack to find the user-defined function that 
+            # triggered the log, ignoring the internal logging module frames.
             stack = inspect.stack()
             # Skip frames from logging module and this file
             for frame_info in stack:
@@ -64,6 +68,7 @@ def initialise_logging(log_filename: str, logger: logging.Logger = None) -> logg
                 logger.error(error_msg)
             raise ValueError(error_msg)
 
+        # File System Preparation
         # Ensure the directory for the log file exists
         log_dir = os.path.dirname(log_filename)
         if log_dir and not os.path.exists(log_dir):
@@ -123,19 +128,16 @@ def initialise_logging(log_filename: str, logger: logging.Logger = None) -> logg
         raise type(e)(error_msg) from e
 
 def seconds_to_hms(seconds: Union[int, float], logger: logging.Logger, aligned: bool = False) -> str:
-    """Converts seconds to a string formatted as hours, minutes, and seconds.
+    """
+    Converts a raw duration in seconds to a human-readable HH:MM:SS string.
 
     Args:
-        seconds (Union[int, float]): Number of seconds to convert.
-        logger (logging.Logger): Logger for logging messages.
-        aligned (bool, optional): If True, returns aligned format with fixed-width fields.
-            Defaults to False.
+        seconds (Union[int, float]): Total seconds to convert.
+        logger (logging.Logger): Application logger.
+        aligned (bool): If True, uses fixed-width padding for tabular display.
 
     Returns:
-        str: Formatted string in hours, minutes, and seconds.
-
-    Raises:
-        ValueError: If seconds is negative or not a number, or if logger is invalid.
+        str: Formatted time string (e.g. "10 hrs 30 mins 0.00 secs").
     """
     try:
         if not isinstance(logger, logging.Logger):
@@ -149,6 +151,7 @@ def seconds_to_hms(seconds: Union[int, float], logger: logging.Logger, aligned: 
         minutes = int((seconds % 3600) // 60)
         secs = float(seconds % 60)
 
+        # Alignment logic ensures columns line up in the console/txt summary.
         formatted_time = (
             f"{hours:>6} hrs {minutes:>6} mins {secs:>6.2f} secs" if aligned
             else f"{hours} hrs {minutes} mins {secs:.2f} secs"
@@ -599,23 +602,19 @@ def observation_period(group: pd.DataFrame, logger: logging.Logger) -> str:
         return "\nObservation period:\n\tError retrieving observation period data\n"
 
 def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images: int) -> str:
-    """Generates a comprehensive summary of an observation session.
-
-    Includes target, site, equipment, observation period, and image type details with
-    corrected formatting: no indentation for target, aligned indentation for telescope
-    and start date, new line after headers, empty line after mean temperature, and
-    proper spacing between exposure lines.
+    """
+    Orchestrates the generation of the human-readable text summary (.txt file).
+    
+    This function groups the aggregated data by site and image type, then 
+    calls sub-processors to build each section (Target, Site, Equipment, Period, Frames).
 
     Args:
-        df (pd.DataFrame): DataFrame containing observation data.
-        logger (logging.Logger): Logger for logging messages.
-        number_of_images (int): Total number of images processed.
+        df (pd.DataFrame): The aggregated session DataFrame.
+        logger (logging.Logger): Application logger.
+        number_of_images (int): Total raw frame count (Lights + Cals).
 
     Returns:
-        str: Formatted session summary.
-
-    Raises:
-        ValueError: If df is not a DataFrame, logger is invalid, or number_of_images is invalid.
+        str: The complete formatted summary string.
     """
     try:
         if not isinstance(logger, logging.Logger):
@@ -627,6 +626,8 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
 
         logger.info("Generating observation session summary")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Priority order for image types in the summary report.
         imagetype_order = ['LIGHT', 'FLAT', 'MASTERFLAT', 'DARKFLAT', 'BIAS', 'DARK', 'MASTERDARKFLAT', 'MASTERBIAS', 'MASTERDARK']
         summary_parts = [f"Observation session summary\nGenerated {current_time}\n"]
 
@@ -642,34 +643,35 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
             summary_parts.append(f"Error: Missing required columns {missing}\n")
             return "\n".join(summary_parts)
 
+        # Multi-Site Iteration: Each site gets its own sub-section in the report.
         for site, group in df.groupby('site', observed=True):
             target_group = group[group['imageType'] == 'LIGHT'].reset_index(drop=True)
             if not target_group.empty:
                 logger.info(f"Processing site: {site}")
-                logger.debug(f"Processing target group: {target_group}")
                 try:
+                    # Section 1: Target Identification (handles mosaic detection)
                     # Remove leading newline and indentation from target details
                     target_summary = target_details(target_group, logger).lstrip('\n').strip()
                     summary_parts.append(f"{target_summary}\n")
                     logger.info("Added target details to summary")
                     
-                    logger.info(f"Processing site details for site: {site}")
-                    logger.debug(f"Processing observation period for group {target_group}")
-                    # Add site details
+                    # Section 2: Site Metadata (Address, Lat/Long, SQM)
                     summary_parts.append(f"{site_details(target_group, site, logger)}\n")
                     logger.info("Added site details to summary")
 
-                    # Add equipment used
+                    # Section 3: Equipment Inventory (Camera, Scope, Software)
                     summary_parts.append(equipment_used(target_group, df, logger))
                     logger.info("Added equipment details to summary")
 
-                    # Add observation period
+                    # Section 4: Temporal Coverage (Dates, Sessions, Temp)
                     summary_parts.append(observation_period(target_group, logger))
                     logger.info("Added observation period to summary")
                 except Exception as e:
                     logger.error(f"Error processing site {site}: {str(e)}")
                     summary_parts.append(f"\nError processing site {site}\n")
 
+            # Section 5: Frame Inventory
+            # Iterates through the predefined image type order to list frame counts and exposures.
             for imagetype in imagetype_order:
                 if imagetype in group['imageType'].unique():
                     try:
@@ -681,6 +683,7 @@ def summarize_session(df: pd.DataFrame, logger: logging.Logger, number_of_images
                         logger.error(f"Error processing image type {imagetype} for site {site}: {str(e)}")
                         summary_parts.append(f"\nError processing {imagetype} frames\n")
 
+            # Final Session Footnote
             summary_parts.append(get_number_of_images(number_of_images, logger))
             logger.info("Added number of images to summary")
 
