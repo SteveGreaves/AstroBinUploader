@@ -70,10 +70,13 @@ def main() -> None:
     
     args = parser.parse_args()
 
+    # Clean the input paths to be immune to trailing spaces or slashes
+    args.directory_paths = [os.path.normpath(p.strip()) for p in args.directory_paths]
+
     DEBUG = args.debug
 
     # Validate and clean directory paths
-    directory_paths = [os.path.abspath(p.strip()) for p in args.directory_paths]
+    directory_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.directory_paths]
     
     # Handle the "." case if it was explicitly passed as the first argument
     if args.directory_paths[0] == ".":
