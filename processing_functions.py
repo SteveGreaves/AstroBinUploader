@@ -4,7 +4,7 @@ from dateutil.parser import parse
 from typing import Dict, Union
 import numpy as np
 
-processing_version = '1.4.4'
+processing_version = '1.4.5'
 
 # Changes:
 # Date: Thursday 25th September 2024
@@ -30,6 +30,10 @@ processing_version = '1.4.4'
 #
 # Date: Tuesday 3rd February 2026
 # Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
+#
+# Date: Saturday 7th February 2026
+# Modification: v1.4.5 Robust date-handling strategy to avoid type conflicts.
+# Replacement of v1.4.4 logic with safer pd.api.types check and direct assignment.
 
 def initialize_processing(headers_state: Dict, logger) -> Dict:
     """
@@ -102,9 +106,10 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
         df.columns = df.columns.str.lower()
         logger.info("Standardized column names to lower case")
         
-        # Fix: Ensure date-obs is string to prevent datetime64[us] issues
+        # Only cast to string if it's not already a datetime object (prevents Pandas 2.0 type-locking)
         if 'date-obs' in df.columns:
-            df['date-obs'] = df['date-obs'].astype(str)
+            if not pd.api.types.is_datetime64_any_dtype(df['date-obs']):
+                df['date-obs'] = df['date-obs'].astype(str)
             
         # Calculate observation statistics
         threshold = timedelta(hours=5)
@@ -147,15 +152,15 @@ def aggregate_parameters(df: pd.DataFrame, state: Dict) -> pd.DataFrame:
             df.loc[:, 'start_date'] = default_date
             df.loc[:, 'end_date'] = default_date
             df.loc[:, 'num_days'] = 0
-        # Convert date-obs to datetime, handling multiple formats
         try:
-            df.loc[:, 'date-obs'] = pd.to_datetime(df['date-obs'], errors='coerce')
+            # Direct assignment without .loc allows Pandas to change the column dtype freely
+            df['date-obs'] = pd.to_datetime(df['date-obs'], errors='coerce')
             if df['date-obs'].isna().all():
-                logger.warning("All dates failed parsing. Using default date.")
-                df.loc[:, 'date-obs'] = pd.to_datetime(default_date)
+                logger.warning("All dates failed parsing. Using default_date.")
+                df['date-obs'] = pd.to_datetime(default_date)
         except Exception as e:
             logger.error(f"Error converting date-obs to datetime: {e}")
-            df.loc[:, 'date-obs'] = default_date
+            df['date-obs'] = pd.to_datetime(default_date)
         # Handle custom date processing if useobsdate is False
         if not state['headers_state']['useobsdate']:
             logger.info("Use observation date is False. Proceeding with custom date handling")

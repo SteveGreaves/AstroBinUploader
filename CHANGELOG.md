@@ -1,5 +1,8 @@
 # AstroBinUpload Change Log
 
+## v1.4.5 (2026-02-07)
+- **Fix**: Upgraded to a more robust date-handling strategy in `aggregate_parameters` to resolve type-conflicts caused by v1.4.4. Now performs conditional string conversion and direct assignment to ensure correct Pandas dtype updates.
+
 ## v1.4.4 (2026-02-04)
 - **Fix**: Resolved DatetimeArray type mismatch in aggregate_parameters by forcing an explicit string cast on the date-obs column. This prevents crashes on systems where Pandas auto-detects dates with high-precision (e.g., datetime64[us]).
 

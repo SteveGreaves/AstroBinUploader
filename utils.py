@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Tuple, Union
 import numpy as np
 
-utils_version = '1.4.4'
+utils_version = '1.4.5'
 #
 # Date: Sunday 1st February 2026
 # Modification : v1.4.2 Restoration & Logic Overhaul.
@@ -17,6 +17,9 @@ utils_version = '1.4.4'
 #
 # Date: Tuesday 3rd February 2026
 # Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
+#
+# Date: Saturday 7th February 2026
+# Modification: v1.4.5 Robust date-handling strategy to avoid type conflicts.
 
 #swapped rotator for rotname in equipment used function
 

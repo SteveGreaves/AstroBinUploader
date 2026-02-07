@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 import warnings
 import logging
+import argparse
 from config_functions import initialise_config, config_version
 from headers_functions import initialize_headers, process_directories
 from processing_functions import initialize_processing, aggregate_parameters, create_astrobin_output
@@ -38,12 +39,15 @@ from utils import initialise_logging, summarize_session, utils_version
 #
 # Date: Tuesday 3rd February 2026
 # Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
+#
+# Date: Saturday 7th February 2026
+# Modification: v1.4.5 Robust date-handling strategy to avoid type conflicts.
 
 
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
-version = '1.4.4'
+version = '1.4.5'
 
 # Determine the script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -59,23 +63,22 @@ def main() -> None:
     Main function to process directories containing FITS files, aggregate parameters,
     get site data, summarize the session, and export the summary and AstroBin data.
     """
-    # Check for debug flag in arguments and set debug flag if found
-    DEBUG = '--debug' in sys.argv
-    if DEBUG:
-        sys.argv.remove('--debug')
+    parser = argparse.ArgumentParser(description="AstroBin Upload Utility")
+    parser.add_argument('directory_paths', nargs='+', help='Directory paths to process')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--test-csv', type=str, help='Diagnostic flag to inject a CSV of headers (e.g., flame_basic_headers.csv) instead of scanning directories.')
+    
+    args = parser.parse_args()
+
+    DEBUG = args.debug
 
     # Validate directory paths
-    if len(sys.argv) < 2:
-        err = "No directory path provided. Please provide a directory path as an argument."
-        print(err)
-        sys.exit(1)
-    elif len(sys.argv) >= 2 and sys.argv[1] == ".":
-        directory_paths = [os.getcwd()] + sys.argv[2:]
-    else:
-        directory_paths = sys.argv[1:]
+    directory_paths = args.directory_paths
+    if directory_paths[0] == ".":
+        directory_paths[0] = os.getcwd()
 
     # Output directory is the first argument
-    output_dir = sys.argv[1]
+    output_dir = directory_paths[0]
 
     # Ensure the output directory path is absolute
     output_dir = os.path.abspath(output_dir)
@@ -186,7 +189,28 @@ def main() -> None:
     logger.info("Reading FITS headers...")
     print('\nReading FITS headers...\n')
     try:
-        headers_df, basic_headers = process_directories(directory_paths, headers_state)
+        if args.test_csv:
+            headers_df = pd.read_csv(args.test_csv)
+            # Normalize column names to uppercase to match internal expectations
+            headers_df.columns = [c.upper() for c in headers_df.columns]
+            
+            print(f"DEBUG: Loaded {len(headers_df)} headers from {args.test_csv}")
+            logger.info(f"Loaded {len(headers_df)} headers from {args.test_csv}")
+            
+            if 'IMAGETYP' in headers_df.columns:
+                print(f"DEBUG: Unique IMAGETYP values (pre-conditioning): {headers_df['IMAGETYP'].unique()}")
+            
+            # Condition headers to ensure all columns (FWHM, HFR, etc.) and normalizations are applied
+            from headers_functions import condition_headers
+            headers_list = headers_df.to_dict('records')
+            headers_df = condition_headers(headers_list, headers_state)
+            basic_headers = headers_df.copy() # Placeholder for debug export
+            
+            if not headers_df.empty and 'IMAGETYP' in headers_df.columns:
+                light_count = len(headers_df[headers_df['IMAGETYP'] == 'LIGHT'])
+                print(f"DEBUG: Number of 'LIGHT' frames (post-conditioning): {light_count}")
+        else:
+            headers_df, basic_headers = process_directories(directory_paths, headers_state)
     except Exception as e:
         logger.error(f"Error processing directories: {str(e)}")
         print(f"Error processing directories: {str(e)}")

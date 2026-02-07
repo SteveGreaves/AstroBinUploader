@@ -4,7 +4,7 @@ from io import StringIO
 from typing import Any, Dict, Optional, Tuple
 from configobj import ConfigObj
 
-config_version = '1.4.3'
+config_version = '1.4.5'
 #
 # Date: Sunday 1st February 2026
 # Modification : v1.4.2 Restoration & Logic Overhaul.
@@ -15,6 +15,9 @@ config_version = '1.4.3'
 #
 # Date: Tuesday 3rd February 2026
 # Modification: v1.4.3 Fix for date collapsing and calibration mismatch.
+#
+# Date: Saturday 7th February 2026
+# Modification: v1.4.5 Robust date-handling strategy to avoid type conflicts.
 
 def cast_value(value: Any, logger: Optional[logging.Logger] = None) -> Any:
     """Casts a value to an appropriate type (list, float, int, or string) based on its format.
