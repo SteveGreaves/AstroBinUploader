@@ -3,7 +3,7 @@
 ## v1.4.5 (2026-02-07)
 - **Fix**: Implemented robust date-type handling for Pandas 2.0.
 - **Feature**: Added `--test` diagnostic mode to inject CSV headers from debug runs.
-- **Improvement**: Improved CLI path handling for trailing spaces and relative paths.
+- **Improvement**: Improved CLI path handling for trailing spaces and relative paths by implementing strict path normalization.
 
 ## v1.4.4 (2026-02-04)
 - **Fix**: Resolved DatetimeArray type mismatch in aggregate_parameters by forcing an explicit string cast on the date-obs column. This prevents crashes on systems where Pandas auto-detects dates with high-precision (e.g., datetime64[us]).

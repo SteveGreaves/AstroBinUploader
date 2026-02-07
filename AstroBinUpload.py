@@ -73,7 +73,7 @@ def main() -> None:
     DEBUG = args.debug
 
     # Validate and clean directory paths
-    directory_paths = [os.path.abspath(os.path.expanduser(p.strip())) for p in args.directory_paths]
+    directory_paths = [os.path.abspath(p.strip()) for p in args.directory_paths]
     
     # Handle the "." case if it was explicitly passed as the first argument
     if args.directory_paths[0] == ".":
