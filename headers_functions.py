@@ -800,11 +800,16 @@ def condition_headers(headers: List[Dict[str, Any]], state: Dict[str, Any]) -> p
     Applies a series of data-cleansing filters to the extracted header list.
 
     The pipeline includes:
-    1. Calibration matching (filtering out irrelevant Darks/Bias).
-    2. Flat frame consolidation (summing Master Flat counts).
-    3. WBPP Deduplication (removing temporary calibrated/registered files).
-    4. Coordinate alignment (propagating Light coordinates to Calibration frames).
-    5. Gain standardization (Integer Gain Handshake).
+    1. Override mapping: Hardware-specific keys (e.g. AOCAMBT) are mapped to internal variables 
+       (e.g. FOCTEMP) as defined in the config.ini [override] section. Source columns are 
+       pruned after successful mapping to ensure a clean DataFrame.
+    2. IMAGETYP normalization: Standardizes Light frame naming by searching for the substring 
+       "LIGHT" (case-insensitive) while excluding "MASTER" variants.
+    3. Calibration matching: Filtering out irrelevant Darks/Bias based on Light frame exposures.
+    4. Flat frame consolidation: Summing Master Flat counts for matching filters.
+    5. WBPP Deduplication: Removing temporary calibrated/registered files from PixInsight.
+    6. Coordinate alignment: Propagating Light coordinates to Calibration frames.
+    7. Gain standardization: Implementing the 'Integer Gain Handshake'.
 
     Args:
         headers (List[Dict[str, Any]]): List of raw header dictionaries.
@@ -836,10 +841,46 @@ def condition_headers(headers: List[Dict[str, Any]], state: Dict[str, Any]) -> p
             logger.warning("No headers to condition")
             return headers_df
 
+        # Step 0: Apply [override] mappings.
+        # This ensures that hardware-specific keys (like AOCAMBT) are mapped to 
+        # internal keys (like FOCTEMP) as defined in the config.
+        if 'override' in config:
+            for internal_key, hardware_keys in config['override'].items():
+                if isinstance(hardware_keys, str):
+                    hw_keys = [k.strip() for k in hardware_keys.split(',')]
+                else:
+                    hw_keys = [str(k).strip() for k in hardware_keys]
+                
+                for hw_key in hw_keys:
+                    # Case-insensitive search for hardware keys
+                    matching_cols = [c for c in headers_df.columns if c.upper() == hw_key.upper()]
+                    if matching_cols:
+                        source_col = matching_cols[0]
+                        if internal_key not in headers_df.columns:
+                            headers_df[internal_key] = headers_df[source_col]
+                            logger.info(f"Mapped hardware key '{source_col}' to internal key '{internal_key}'")
+                        else:
+                            headers_df[internal_key] = headers_df[internal_key].fillna(headers_df[source_col])
+                            logger.info(f"Filled internal key '{internal_key}' with data from '{source_col}'")
+                        
+                        # Systematic Cleanup: Drop the source column once mapped
+                        if source_col != internal_key:
+                            headers_df.drop(columns=[source_col], inplace=True)
+                            logger.info(f"Dropped source column '{source_col}' after override mapping.")
+                        break
+
         # Check for IMAGETYP column (essential for all downstream logic)
         if 'IMAGETYP' not in headers_df.columns:
             logger.error("IMAGETYP column missing in headers DataFrame")
             return headers_df
+
+        # Step 0: Normalize IMAGETYP for LIGHT frames.
+        # Rule: If IMAGETYP contains the string 'light' (case-insensitive) AND does NOT contain 
+        # the string 'master' (case-insensitive), convert the value to exactly 'LIGHT'.
+        if 'IMAGETYP' in headers_df.columns:
+            mask = (headers_df['IMAGETYP'].str.contains('light', case=False, na=False) & 
+                    ~headers_df['IMAGETYP'].str.contains('master', case=False, na=False))
+            headers_df.loc[mask, 'IMAGETYP'] = 'LIGHT'
 
         # Check for LIGHT frames: If no lights are found, the session is considered invalid.
         if 'LIGHT' not in headers_df['IMAGETYP'].values:

@@ -33,7 +33,7 @@
         EXPOSURE = EXPTIME
         SITE = SITENAME
         FOCNAME = FOCUSER
-        SQM = AOCSKYQ
+        SQM = AOCSKYQ, AOCSKYQU
         FOCTEMP = AOCAMBT
 [filters]
         #Filter     code

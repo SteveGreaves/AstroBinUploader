@@ -8,13 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.5] - 2026-02-07
 
 ### Added
+- **Dynamic Hardware Overrides**: Implemented a Search, Replace, and Normalize system for FITS headers via `config.ini`, supporting multi-key variations (e.g. `SQM = AOCSKYQ, AOCSKYQU`) and automatic source pruning.
 - **Documentation Audit**: Refined internal documentation, docstrings, and comments across all modules for improved maintainability.
+- **Multi-key FITS Overrides**: Added support for multi-key FITS overrides in `config.ini` to handle hardware variations.
+- **FITS Header Overrides Documentation**: Documented the user-maintainable FITS header override system for custom hardware support.
 - **INI [override] Section**: Added support for an `[override]` section in `config.ini` to manually force specific header values (Exposure, Gain, Filter, etc.) regardless of FITS metadata.
 - **XISF Processing History Parsing**: Enhanced `xml_to_data` logic to navigate PixInsight's nested XML and extract the `rows` attribute for accurate Master frame sub-exposure counts.
 - **Keyword Aliasing**: Added support for `SITENAME` (mapped to `SITE`) and `FOCUSER` (mapped to `FOCNAME`) for SGP-PRO compatibility.
 - **Live Progress Feedback**: Integrated a console counter within the `get_HFR` loop to track progress during LIGHT frame analysis.
 
 ### Fixed
+- **IMAGETYP Normalization**: Implemented a robust rule to convert any type containing 'light' but NOT 'master' (case-insensitive) to exactly 'LIGHT', ensuring compatibility with varied capture software names while preserving Master frame exclusion.
 - **DATE-OBS Timestamping**: Implemented standard removal of fractional seconds from `DATE-OBS` strings to prevent parsing errors during session aggregation.
 - **Filter Sanitization**: Added automatic `.strip()` to filter names to prevent duplicate acquisition entries caused by trailing white spaces.
 - **Image Type Normalization**: Updated logic to treat `LIGHTFRAME` and `Light Frame` as standard `LIGHT` frames.

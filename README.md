@@ -143,7 +143,18 @@ The [sites] section holds historic site information found by the script. When a 
 
 ### **[override]**
 
-The [override] section provides a translation layer that allows you to map non-standard FITS keywords to the internal keywords used by the script. This is particularly useful for capture software or camera drivers that utilize alternative naming conventions for standard parameters. For example:
+The [override] section provides a translation layer that allows you to map non-standard FITS keywords to the internal keywords used by the script. This is particularly useful for capture software or camera drivers that utilize alternative naming conventions for standard parameters. 
+
+Users can maintain their own list of FITS keywords in the `config.ini` under the `[override]` section. This allows for mapping standard internal variables to custom hardware keys provided by specific drivers or devices. The script also supports a comma-separated list of keys to handle hardware variations (e.g., different versions of the same sensor).
+
+Example:
+```ini
+[override]
+SQM = AOCSKYQ, AOCSKYQU
+FOCTEMP = AOCAMBT
+```
+
+In this example, the script will first look for `AOCSKYQ`, and then `AOCSKYQU` if the first is not found, to populate the internal `SQM` variable. The script prioritizes these manual overrides over standard defaults. Once a mapping is successful, the source hardware column is pruned to ensure a clean data hand-off to the aggregator.
 
 It is advisable to back up you config.ini file regularly. 
 
