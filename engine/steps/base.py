@@ -127,12 +127,30 @@ class NormalizeHeadersStep:
                 'DARK FLAT': ImageType.DARK_FLAT.value
             }
             
-            # Apply mappings (longer keywords first to prevent partial matches like 'DARK' matching 'DARKFLAT')
+            # Apply mappings (longer keywords first to prevent partial matches like 'DARK' matching 'DARKFLAT').
+            #
+            # Matches are evaluated against a frozen snapshot of the original
+            # values, and a row is only ever assigned once. Previously each
+            # mask was recomputed against df[itype_col] *after* prior
+            # iterations had already mutated it, so a row correctly set to
+            # 'MASTERDARK' by the 'MASTER DARK' keyword was then reprocessed
+            # by the later, shorter 'DARK' keyword -- which matches
+            # 'MASTERDARK' as a substring of its own output -- and clobbered
+            # straight back down to plain 'DARK'. In practice this meant
+            # every master calibration frame silently lost its master
+            # designation, which made the master-preference check in
+            # CalibrationMatcherStep.resolve_count() (it looks for a
+            # 'MASTER' substring) permanently unreachable, risking
+            # double-counted calibration frames whenever a master and its
+            # own raw subs coexisted (A13 in REMEDIATION_PLAN.md).
+            original_itype = df[itype_col].copy()
+            assigned = pd.Series(False, index=df.index)
             for keyword, normalized in sorted(type_map.items(), key=lambda x: len(x[0]), reverse=True):
-                mask = df[itype_col].str.contains(keyword, case=False, na=False)
+                mask = original_itype.str.contains(keyword, case=False, na=False) & ~assigned
                 if mask.any():
                     logger.debug(f"Converted IMAGETYP keyword '{keyword}' to {normalized}")
                 df.loc[mask, itype_col] = normalized
+                assigned |= mask
 
         # --- Stage 7: Core Column Hardening ---
         # Ensure critical columns exist and are strictly typed.

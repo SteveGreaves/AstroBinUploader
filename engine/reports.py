@@ -167,10 +167,18 @@ def format_image_type_table(group: pd.DataFrame, imagetype: str, logger: logging
     """
     lines = []
     total_exposure = 0.0
-    
-    # Filter for the specific image type requested
-    image_group = group[group[InternalColumns.IMAGE_TYPE] == imagetype].copy()
-    
+
+    # The caller (generate_full_summary) already scopes `group` to exactly
+    # the row types belonging to this category via isin(matches) -- e.g.
+    # both 'DARK' and 'MASTERDARK' for the dark category -- so no further
+    # type filtering happens here. This used to re-filter for an exact match
+    # against `imagetype` (the category's base type only), which silently
+    # dropped every row whenever a group contained *only* its MASTER
+    # variant and no base-type row -- invisible until A13 in
+    # REMEDIATION_PLAN.md stopped IMAGETYP normalization from collapsing
+    # every master label down to its base type.
+    image_group = group.copy()
+
     # Calibration Filtering: Only show Calibration for (Filter and/or Gain) that were actually used for Lights
     # This prevents clutter from calibration files that don't belong to the current session.
     if light_filters is not None and "FLAT" in imagetype.upper():
@@ -255,9 +263,18 @@ def format_image_type_table(group: pd.DataFrame, imagetype: str, logger: logging
             gain_str = str(int(round(float(gain_val)))) if pd.notna(gain_val) else "N/A"
             egain_str = f"{float(row[InternalColumns.EGAIN]):.2f} e/ADU"
             
-            # For Dark/Bias, the filter column should be blank if it is 'No Filter'
+            # For Dark/Bias, the filter column should be blank if there is no
+            # real filter. Two distinct sentinels mean "no filter" here:
+            # 'No Filter' (the configured [defaults] value, injected only
+            # when the FITS/XISF file never had a FILTER column at all) and
+            # 'None' (AggregationStep's null-safety fill, applied per-cell
+            # when the column exists but this row's value was missing --
+            # e.g. calibration masters with no FILTER keyword in a dataset
+            # where other frames do have one). Previously only the former
+            # was blanked, so the latter leaked the literal text "None"
+            # into the report whenever it occurred.
             filter_val = str(row[InternalColumns.FILTER_NAME])
-            if filter_val == 'No Filter': filter_val = ""
+            if filter_val in ('No Filter', 'None'): filter_val = ""
 
             lines.append(header.format(
                 filter_val, int(row[InternalColumns.NUMBER]), gain_str, egain_str,
