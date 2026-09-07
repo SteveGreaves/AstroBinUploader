@@ -14,8 +14,8 @@ Two honest caveats, stated up front rather than buried:
    today's `v2.0.3`. Today's code is non-deterministic (`REMEDIATION_PLAN.md`
    A9: `as_completed` yields in completion order and `sort_values` is unstable),
    so it does not produce a single well-defined output to be exact *against*.
-   Fix Bucket A first, tag `v2.1.0`, regenerate the golden corpus, and that
-   becomes the contract.
+   **Done:** Bucket A/B are fixed, the corpus is regenerated, and `v2.1.0` is
+   tagged (PR #12). That tag is the contract.
 2. **One output block is expensive to match byte-for-byte** — the
    `pandas.DataFrame.to_string()` table appended to the bottom of the session
    summary. It is emulable, but it is the single largest risk item in the
@@ -107,6 +107,12 @@ whether pandas would have skipped or propagated.
 
 ## Parity hazards, ranked
 
+> Re-validated against the landed v2.1.0 fixes on 2026-09-07. Hazards 3 and 8
+> are now *resolved questions* (the algorithm is pinned in code, not merely
+> proposed); hazard 2 gained concrete detail; hazards 10–12 are new — the
+> A1/A2, A3/A4 and A13/A14 fixes each introduced behaviour a port must match
+> that did not exist when this plan was first written.
+
 ### 1. `acq_df.to_string()` appended to the summary — highest risk
 `engine/exporter.py:122`
 
@@ -163,7 +169,27 @@ clean numeric type at the group-key stage, so `BTreeMap`'s natural ordering
 is a direct match without any pandas mixed-type sort fallback to replicate.
 
 Also replicate: `groupby(dropna=True)` is the default, so **rows with a null in
-any group key are silently dropped**.
+any group key are silently dropped** — but note `AggregationStep` now fills
+every group key first (`fillna(0)` for numeric keys, `fillna("None")` for
+object keys, literal `"None"` for a missing column), so in practice nothing is
+dropped there; `reports.py`'s inner `groupby` calls are the ones still exposed
+to the drop.
+
+Confirmed against v2.1.0:
+- `agg_cols` mixes types — `site_name`/`session_date` (a `datetime.date`)/
+  `image_type`/`filter`/`target` are object, `gain`/`xbinning`/`duration` are
+  numeric. `groupby` sorts by the key tuple with **per-column** ordering
+  (lexicographic on strings, numeric on the rest, `date` chronological). A
+  single `BTreeMap<CompositeKey, _>` works only if `CompositeKey`'s `Ord` is
+  column-type-aware.
+- `AggregationStep` does a `sort_values(DATE_OBS, kind='mergesort')` **before**
+  grouping. `pd.to_datetime(errors='coerce')` puts unparseable dates at `NaT`,
+  and a stable sort sends `NaT` to the **end**. The `agg('first')` columns
+  (focal length, pixel size, camera, filenames, …) read from this order, so
+  the Rust sort must be stable and NaT-last.
+- `DeduplicateStep`'s survivor pick is `sort_values(['ext_rank', filename],
+  key=len-on-filename-only, kind='mergesort').iloc[0]` — stable sort on
+  `(ext_rank, char_len(filename))`, ties broken by dispatch order.
 
 ### 3. Rounding — replicate the sequence, not just the final format
 
@@ -186,12 +212,21 @@ remediation **A12** vectorises `OpticalParameterStep`, and if that rewrite
 reaches for pandas `.round()` the target algorithm silently changes underneath
 this port.
 
-**Action: pin it.** A12 specifies keeping builtin-`round` semantics via an
-explicit helper. Confirm that landed before Phase 2, then implement
-`python_round(x: f64, n: u32) -> f64` in Rust and route every rounding call
-through it — never `f64::round`. If A12 is instead resolved in favour of pandas
-semantics, this helper must emulate numpy's `rint` path instead; the two are
-not interchangeable and the choice must be recorded in the parity contract.
+**Resolved (v2.1.0).** A12 landed as `engine/steps/optical.py::_python_round`
+— `series.apply(lambda x: round(x, ndigits))`, i.e. CPython builtin
+round-half-to-even on the true decimal value. So the target algorithm is
+fixed: implement `python_round(x: f64, n: u32) -> f64` in Rust (a correctly
+rounded decimal round, not `f64::round`, which is half-away-from-zero) and
+route HFR / IMSCALE / MEAN_FWHM through it, then `{:.2}` on top. Rust's
+`{:.N}` formatter is itself half-to-even and matches the trailing format
+step. **Do not use `f64::round()` anywhere.**
+
+One asymmetry to reproduce deliberately: `geocode.py::_find_site_in_db`
+compares `db_lat.round(precision)` (pandas/numpy rint) against
+`round(lat, precision)` (builtin) — the two sides of that equality use
+*different* rounding. It only affects whether an averaged centroid matches a
+site-DB entry, but a faithful port needs numpy-rint on the DB column and
+builtin-style on the query scalar, not one helper for both.
 
 `seconds_to_hms` needs equal care: `int(seconds // 3600)` is float floor-division
 then truncation, and Python's `%` takes the sign of the divisor. For the
@@ -228,15 +263,72 @@ match. Enumerate the formats found across the fixture corpus first.
 ### 8. Traversal order
 
 `os.walk` order feeds dedup tie-breaks and every `first()` pick. Remediation A9
-makes the Python side sort explicitly; the Rust side must apply the **same**
-sort (by absolute path, bytewise) rather than relying on `walkdir`'s
-platform-dependent order.
+makes the Python side sort explicitly — `file_paths.sort()` over the
+**`os.path.join(root, file)` strings exactly as constructed from the CLI
+arguments** (relative if the argument was relative — *not* canonicalised to
+absolute), with all input directories merged into one list before the sort.
+Python's `str` sort is by Unicode scalar value, which for UTF-8 coincides with
+a bytewise sort. The Rust side must reproduce that exact string and that exact
+order rather than relying on `walkdir`'s platform-dependent traversal.
+Extension filter: case-insensitive `.fits/.fit/.fts/.xisf`.
 
 ### 9. Drop the version handshake
 
 `verify_engine_integrity` and the 14 duplicated `__version__` strings exist to
 detect mixed-file installations. That failure mode cannot occur in a single
-static binary. Do not translate it; a `--version` flag replaces it.
+static binary. Do not translate it; a `--version` flag replaces it. (B8 already
+collapsed the 14 strings to one source, so there is only one value to expose.)
+
+### 10. Deduplication key and WBPP regex (A1, A2 — new since the audit)
+
+`DeduplicateStep` changed materially in v2.1.0:
+- The base-name split is now `constants.RegexPatterns.WBPP_FILENAME`, an
+  **anchored** pattern applied case-insensitively via `.str.extract(...)[0]`
+  (group 1 = base name; a non-match yields null and that row is skipped):
+  `(.+?)(_(?:c|cc)(?:_(?:cc|rn|r|d|b|s|lps))*)?(\.xisf|\.fits|\.fit|\.fts)$`.
+  The lazy `(.+?)` plus end-anchor means the Rust regex must be equally lazy
+  and anchored — a greedy or unanchored translation reintroduces A1.
+- The dedup group key is now `(dirname(source_path), base_filename)`, not
+  `base_filename` alone. `dirname` is `os.path.dirname` semantics on the
+  `source_path` string. When the `source_path` column is absent (a `--test`
+  CSV captured before A2) the code degrades to a `''` directory for every row
+  and logs a warning — the port must reproduce both the fallback and the
+  warning so old fixtures still replay identically.
+
+### 11. GPS greedy single-linkage clustering (A3, A4 — new since the audit)
+
+`GeocodeStep` is no longer coordinate rounding. It is now:
+1. `_align_coordinates`: for each non-Light row, if lat/lon are both present,
+   snap to the **haversine-nearest** Light frame (`dist.idxmin()` — first index
+   wins ties); if either is missing, snap to `lights.iloc[0]`.
+2. Build `unique_coords` = `coords_df.drop_duplicates()` (first-occurrence
+   order, after `pd.to_numeric(errors='coerce').fillna(0.0)` on both columns).
+3. Greedy single-linkage over `unique_coords` **in row order**: each still-
+   unclaimed point opens a new cluster and claims every still-unclaimed point
+   with haversine distance **strictly** `< 110.0 m`. Order-dependent by
+   design — the Rust iteration order must match exactly.
+4. Cluster coordinate = arithmetic mean of member lat/lon (numpy `mean`,
+   pairwise summation).
+5. Site-DB lookup per cluster with the mixed-rounding equality from hazard 3.
+
+`_haversine_distance_m`: `EARTH_RADIUS_M = 6371000.0`, standard haversine
+(`2 * arcsin(sqrt(a))`), radians via `np.radians`. Pin the constant and the
+formula shape; do not substitute a different great-circle form.
+
+### 12. Calibration report-table grouping (A13, A14 — new since the audit)
+
+- **A13**: master-preference filtering runs in `base.py` **before** IMAGETYP
+  normalization (so `FLAT`/`MASTERFLAT` substring matching still works), and
+  the normalization pass must not re-run over its own output (that was the
+  bug — it re-mapped `MASTER DARK` → `MASTERDARK` → matched `MASTERDARK` as a
+  substring and clobbered the label). Port the ordering and the single-pass
+  guarantee.
+- **A14**: in `reports.py::format_image_type_table`, only
+  `filter_matters_for_type = 'FLAT' in imagetype.upper()` (i.e. FLAT and
+  DARKFLAT) groups/labels by filter. DARK and BIAS are filter-independent —
+  their table rows carry a blank filter regardless of any stray `FILTER` tag
+  on the frame. This mirrors `calibration.py`, which never constrains
+  dark/bias matching on filter.
 
 ---
 
@@ -247,12 +339,12 @@ covers.
 
 | Phase | Scope | Why here |
 |---|---|---|
-| **0** | Freeze the contract: tag repaired Python `v2.1.0`, regenerate goldens from fixtures, commit | Nothing testable without it |
+| **0** | Freeze the contract — **done**: `v2.1.0` tagged, goldens regenerated, PR #12 open. Merge before Phase 1. | Nothing testable without it |
 | **1** | Cargo scaffold, `clap` CLI, config parser, `--test` CSV ingest **only** | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
 | **2** | The six pipeline steps as pure functions over `Vec<Frame>` | The bulk of the logic; fully exercised by Phase 1's CSV path |
 | **3** | Exporter + `reports.py` — the byte-parity grind | Hazard 1 lives here |
 | **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise; validate against the synthetic binary fixtures from remediation P0 |
-| **5** | `rayon` parallelism, musl static build, cross-compilation | Optimise only once correct |
+| **5** | `rayon` parallelism; release matrix for Windows / Linux (`musl` static) / macOS, x86-64 and arm64 | Optimise only once correct |
 | **6** | Differential harness in CI: both binaries over the full corpus, byte-compare modulo the `Generated` line | Ongoing guarantee |
 
 Phase 1 is deliberately ordered before Phase 4. Because `--test` replay was
