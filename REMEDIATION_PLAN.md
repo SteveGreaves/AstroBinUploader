@@ -668,9 +668,10 @@ This section closes that loop. Verified against the `v2.1.0` code
 | **#6** | Built-in mapping of `AOCSKYQU`→SQM, `AOCAMBT`→FOCTEMP | **A6** (`[override]` plumbing) | **Resolved.** These aliases (plus `FOCNAME`/`SWCREATE`) are now in the generated default `[override]` section and `config.ini.example`; covered by `tests/test_config_overrides.py`. | Close |
 | **#5** | Override *values* (e.g. `EAF` → full focuser name) | — | **Not built.** `[override]` remaps keywords, not values. Genuine feature request. | Keep open as `enhancement` |
 
-**Blocked bookkeeping**: the `gh issue close` / `gh pr merge` calls above are
-denied by this session's auto-mode classifier. They need `Bash(gh:*)` added to
-`autoMode.allow`, or the maintainer runs them.
+**Bookkeeping: done 2026-09-07.** Issues #3, #4, #5, #6 and #11 closed with
+explanatory comments; PR #8 closed as superseded by the v2.0.1 `--config`
+implementation; PR #13 closed as superseded. #9 and #10 left open pending a
+re-test against the reporter's data.
 
 **Remaining**: #9 and #10 need a re-test on `v2.1.0` against the reporter's
 data before closing; the `[calibrationoverrides]` ini fallback floated in #10

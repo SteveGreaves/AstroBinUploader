@@ -28,13 +28,15 @@ Current state: `main`, v2.1.1, golden 2/2, pytest 5/5, pyflakes clean.
 
 ## 🚧 Current Blockers & Technical Debt
 
-- **GitHub bookkeeping is unfinished.** `gh issue close` / `gh pr merge` were denied by the
-  auto-mode classifier for the whole session. Adding `"Bash(gh:*)"` to `autoMode.allow` in
-  `~/.claude/settings.json` fixes it. Outstanding:
-  - **PR #13** — a one-line `SESSION.md` doc change, still open and unmerged.
-  - Issues **#3, #4, #5, #6, #11** are fixed in code but still show open; **PR #8** is
-    superseded. Issues **#9, #10** need a re-test from the reporter on v2.1.1 before closing.
-  - Ready-to-post comment text is in the reconciliation table at the end of `REMEDIATION_PLAN.md`.
+- **GitHub tracker is now clear** — 0 open PRs, 2 open issues. Closed 2026-09-07 with
+  explanatory comments: issues #3, #4, #5, #6, #11; PRs #8 (superseded) and #13 (superseded
+  by the SESSION.md rewrite on main).
+  - **#9 and #10 remain open deliberately.** Both are believed fixed by v2.1.0's master-frame
+    handling (A10/A13/A14) and the `ImageIntegration.numberOfImages` parsing in
+    `extractor.py`, but neither can be confirmed without the reporter's data. They need a
+    re-test on v2.1.1 before closing. The `[calibrationoverrides]` ini fallback floated in
+    #10 is a separate, unbuilt enhancement.
+  - Per-issue status and evidence: the reconciliation table at the end of `REMEDIATION_PLAN.md`.
 - `golden_tests/fixtures/binary/` was never built (P0 item 3): the FITS/XISF parsing paths
   have no regression fixtures. The Rust port's Phase 4 needs these too.
 - Only two golden fixtures exist. `DARKFLAT` / flat-dark matching (A11) is covered by neither.
