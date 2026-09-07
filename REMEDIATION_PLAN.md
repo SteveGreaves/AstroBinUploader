@@ -266,23 +266,37 @@ fixture — neither's raw headers contain a `CREATOR` or `AOCSKYQ`/`AOCSKYQU`
 keyword — so this closes two dead configuration paths without an available
 before/after example. The fix is `git log` `91b77f6`.
 
-### A7. Only HDU 0 is read, and repeated cards are collapsed
-`engine/extractor.py:137`
+### A7. Only HDU 0 is read — real, but the "HISTORY collapse" half wasn't **[proven, fixed]**
+`engine/extractor.py`, `_read_fits`
 
-```python
-hdr = dict(hdul[0].header)
-```
+Originally written up as two problems. Both were re-verified empirically
+before fixing anything, since A5 had already shown a read-the-code-only audit
+can overstate a bug:
 
-Two problems. Files whose primary HDU is empty — Rice-compressed `.fits.fz`,
-some multi-extension writers — yield an essentially blank header, and the frame
-is dropped with no diagnostic. And `dict()` on a FITS header collapses repeated
-cards, so the multi-line `HISTORY` block that `_get_fit_number` parses for
-`ImageIntegration.numberOfImages` is reduced to one entry — master-frame
-sub-exposure counts can silently fall back to `1`.
+- **"`dict()` collapses repeated `HISTORY` cards" — does not hold up.**
+  astropy's `Header` object already aggregates every `HISTORY` card under one
+  key as a single `_HeaderCommentaryCards` sequence; `dict()` carries that
+  through unchanged, and iterating it (as `_get_fit_number` already does)
+  correctly finds the right line regardless of where it sits among other
+  `HISTORY` entries. Tested with the target line first, last, and buried in
+  the middle: all three parsed correctly with the *existing*, unmodified
+  code. No fix needed, none made.
+- **"Files whose primary HDU is empty ... yield a blank header" — real.**
+  Confirmed with a genuine compressed-FITS structure (`CompImageHDU`, the
+  `.fits.fz` convention): `IMAGETYP`/`EXPOSURE`/etc. land on the image
+  extension (HDU 1), and the primary HDU (HDU 0) carries only structural
+  boilerplate (`SIMPLE`/`BITPIX`/`NAXIS`/`EXTEND`). `dict(hdul[0].header)`
+  unconditionally reads the boilerplate-only header, silently missing every
+  real keyword.
 
-**Fix.** Select the first HDU carrying a non-trivial header. Read `HISTORY` and
-`COMMENT` through the header accessor, which preserves all cards, before
-flattening the rest to a dict.
+**Fix.** `_read_fits` now scans the HDU list for the first one containing
+`IMAGETYP` and reads that one, falling back to HDU 0 (today's behaviour) if
+none carry it. Verified against a synthetic `CompImageHDU` file (correctly
+now reads `IMAGETYP`/`EXPOSURE` from HDU 1) and a normal uncompressed FITS
+file (unaffected). No fixture in the committed corpus exercises FITS file
+reading at all — both replay via `--test` CSV injection, which bypasses it —
+so this fix has no regression coverage from either fixture; P0 already calls
+out synthetic binary fixtures as future work for exactly this gap.
 
 ### A8. Defaults are injected before case normalisation
 `engine/steps/base.py:78–99`
@@ -511,8 +525,10 @@ A5   numeric group-key fillna          ← not actually reachable      [done, 95
                                           today; fixed defensively
 A6   dead [override] entries           ← 2nd bug (SQM list) found    [done, 91b77f6]
                                           fixing the 1st
+A7   HDU selection                     ← "HISTORY collapse" half     [done, 63f5886]
+                                          disproven; other half real
  │
-A7 · A8 · A12                          ← one commit + attributed diff each
+A8 · A12                               ← one commit + attributed diff each
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
