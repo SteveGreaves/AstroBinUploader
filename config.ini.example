@@ -34,6 +34,15 @@
         FOCNAME = FOCUSER
         SQM = AOCSKYQ, AOCSKYQU
         FOCTEMP = AOCAMBT
+[equipmentoverrides]
+        # Force a display value for equipment fields when the header
+        # text is unhelpful (e.g. NINA writes "EAF" not "ZWO EAF").
+        # "None" = leave the value as found.
+        INSTRUME = None
+        TELESCOP = None
+        FOCNAME = None
+        FWHEEL = None
+        ROTNAME = None
 [filters]
         #Filter     code
         Ha = 4663

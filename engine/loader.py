@@ -83,6 +83,9 @@ class ConfigLoader:
         return AppConfig(
             defaults=self._normalize_defaults(defaults_sec),
             overrides=self._normalize_overrides(normalized.get(ConfigSections.OVERRIDE, {})),
+            equipment_overrides=self._normalize_equipment_overrides(
+                normalized.get(ConfigSections.EQUIPMENT_OVERRIDES, {})
+            ),
             filters=normalized.get(ConfigSections.FILTERS, {}),
             sites=normalized.get(ConfigSections.SITES, {}),
             use_obs_date=use_obs_date
@@ -102,7 +105,8 @@ class ConfigLoader:
             'TELESCOP': 'None',
             'FOCNAME': 'None',
             'FWHEEL': 'None',
-            'ROTATOR': 'None',
+            'ROTNAME': 'None',
+            'ROTANTANG': 0,
             'XPIXSZ': 3.76,
             'CCD-TEMP': -10,
             'FOCALLEN': 500,
@@ -119,10 +123,27 @@ class ConfigLoader:
             'SWCREATE': 'Unknown package',
             'USEOBSDATE': 'True'
         }
+        # Keyword-remap defaults. Kept in sync with config.ini.example.
+        # SQM/FOCTEMP aliases resolve the common ASCOM Observing-Conditions
+        # keywords out of the box (GitHub #6); FOCNAME/SWCREATE cover the
+        # N.I.N.A. spellings.
         config[ConfigSections.OVERRIDE] = {
             'SITE': 'SITENAME',
             'EXPOSURE': 'EXPTIME',
-            'INSTRUME': 'CAMERA_MODEL'
+            'INSTRUME': 'CAMERA_MODEL',
+            'FOCNAME': 'FOCUSER',
+            'SWCREATE': 'CREATOR',
+            'SQM': 'AOCSKYQ, AOCSKYQU',
+            'FOCTEMP': 'AOCAMBT'
+        }
+        # Forced display values (GitHub #5). 'None' means "leave as found";
+        # set e.g. FOCNAME = ZWO EAF to override for every frame.
+        config[ConfigSections.EQUIPMENT_OVERRIDES] = {
+            'INSTRUME': 'None',
+            'TELESCOP': 'None',
+            'FOCNAME': 'None',
+            'FWHEEL': 'None',
+            'ROTNAME': 'None'
         }
         config[ConfigSections.FILTERS] = {
             'Ha': 4663,
@@ -179,4 +200,28 @@ class ConfigLoader:
                     f"typo (did you mean one of: "
                     f"{', '.join(sorted(_KNOWN_OVERRIDE_TARGETS))}?)"
                 )
+        return result
+
+    def _normalize_equipment_overrides(self, raw: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Processes the [equipmentoverrides] section (GitHub #5).
+
+        Each entry forces a literal value into a named internal column for
+        every row, applied after default injection. An entry whose value is
+        blank or the sentinel 'None' is treated as "no override" and
+        skipped, so the generated template can list every overridable field
+        without changing behaviour until the user edits one.
+        """
+        result = {}
+        for k, v in raw.items():
+            val = str(v).strip() if v is not None else ''
+            if val == '' or val.lower() == 'none':
+                continue
+            key = k.upper().replace(' ', '')
+            if key.lower() not in _KNOWN_OVERRIDE_TARGETS:
+                self.logger.warning(
+                    f"[equipmentoverrides] target '{k}' does not match any "
+                    f"recognized internal column and will have no effect."
+                )
+            result[key] = val
         return result

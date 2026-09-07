@@ -51,6 +51,17 @@ commit and verification note. A golden regression harness now guards behaviour.
   coalesce; input paths validated; magic numbers named; `requirements.txt`
   trimmed to real dependencies.
 
+### Config (GitHub issue follow-up)
+- **#3** — the generated default `config.ini` now seeds `ROTNAME` / `ROTANTANG`
+  instead of the stale `ROTATOR` key.
+- **#6** — the generated default `[override]` section now includes
+  `SQM = AOCSKYQ, AOCSKYQU` and `FOCTEMP = AOCAMBT` (ASCOM Observing-Conditions
+  keywords), plus `FOCNAME = FOCUSER` and `SWCREATE = CREATOR`.
+- **#5** — new optional `[equipmentoverrides]` section: forces a literal
+  display value into `instrume` / `telescop` / `focname` / `fwheel` / `rotname`
+  (or any column) for every frame, applied after default injection. Useful
+  when a header carries `EAF` rather than `ZWO EAF`.
+
 ### Testing
 - New `golden_tests/run_golden.py` — replays committed fixtures through the
   `--test` path and byte-compares against blessed references. Ships with two

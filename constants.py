@@ -62,6 +62,7 @@ class ConfigSections:
     """
     DEFAULTS = 'defaults'      # Standard fallback values
     OVERRIDE = 'override'      # User-defined keyword remapping
+    EQUIPMENT_OVERRIDES = 'equipmentoverrides'  # User-defined value replacement
     FILTERS = 'filters'        # AstroBin filter code database
     SITES = 'sites'            # Local site coordinates database
 

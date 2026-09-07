@@ -26,6 +26,8 @@ class AppConfig:
     Attributes:
         defaults (Dict[str, Any]): Fallback values for missing metadata (e.g., SITE, BORTLE).
         overrides (Dict[str, List[str]]): User-defined hardware keyword mappings.
+        equipment_overrides (Dict[str, str]): Forced literal values for named columns
+            (e.g. focname = ZWO EAF), applied after defaults. GitHub #5.
         filters (Dict[str, Any]): Map of filter names to AstroBin numeric IDs.
         sites (Dict[str, Dict[str, Any]]): Database of previously geocoded site coordinates.
         use_obs_date (bool): If True, use calendar capture date; if False, shift overnight sessions.
@@ -37,6 +39,7 @@ class AppConfig:
     sites: Dict[str, Dict[str, Any]]
     use_obs_date: bool = True
     precision: int = 4
+    equipment_overrides: Dict[str, str] = field(default_factory=dict)
 
 @dataclass
 class SessionState:

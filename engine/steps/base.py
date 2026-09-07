@@ -139,6 +139,17 @@ class NormalizeHeadersStep:
                 logger.debug(f"Default Injection: Key '{k}' not found, using default '{v}'")
                 df[k_lower] = v
 
+        # --- Stage 3b: Equipment Value Overrides ---
+        # [equipmentoverrides] forces a literal display value into a column
+        # for every row -- e.g. focname = 'ZWO EAF' when the header only
+        # carries 'EAF' (GitHub #5). Runs after default injection so it wins
+        # over both the found value and any default. Sentinel/blank entries
+        # were already dropped by the loader.
+        for k, v in config.equipment_overrides.items():
+            k_lower = k.lower()
+            logger.debug(f"Equipment Override: forcing '{k_lower}' = '{v}'")
+            df[k_lower] = v
+
         # --- Stage 4: Initial Filtering ---
         # Drop 'MASTERLIGHT' frames.
         # We calculate exposures from individual subs; masters would double the total.
