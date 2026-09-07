@@ -4,10 +4,9 @@ Full remediation of AstroBinUpload.py v2.0.3 (a FITS/XISF metadata pipeline
 for AstroBin bulk uploads) per an audit that produced two plan documents:
 `REMEDIATION_PLAN.md` (bug fixes) and `RUST_PORT_PLAN.md` (feasibility study
 for a future standalone Rust port, not started). Work happened on branch
-`remediation/v2.1.0`. The branch is now pushed to `origin` and **PR #12**
-(<https://github.com/SteveGreaves/AstroBinUploader/pull/12>) is open against
-`main`, awaiting review/merge. The `v2.1.0` tag is still **local-only** — by
-explicit user instruction it is not pushed until PR #12 merges. `main` is untouched.
+`remediation/v2.1.0`. **PR #12 was merged into `main`** (merge commit
+`1c46c6f`) and the annotated tag **`v2.1.0` is pushed to `origin`**. The
+release is complete; `main`'s golden harness is 2/2 green.
 
 The repo was also relocated this session, from `/mnt/raid0/AgentCode_old/AstroBinUpload`
 (misleading historical name) to `/mnt/raid0/Agent_Code/Astronomy/AstroBinUploader`
@@ -105,9 +104,8 @@ none urgent:
 Nothing is queued — the user has not yet said what they want next. Likely
 candidates, in rough order of what was implied during the session:
 
-1. **PR #12 is open** (branch pushed, tag held back per user). Next action
-   is the user's review + merge. Once merged: push the `v2.1.0` tag to
-   `origin` (`git push origin v2.1.0`).
+1. **v2.1.0 is released** — PR #12 merged, tag pushed. Nothing outstanding
+   on the Python side.
 2. **If continuing code work**: re-read `REMEDIATION_PLAN.md`'s status
    (all items marked done) to confirm nothing regressed, then decide
    whether to start `RUST_PORT_PLAN.md`'s Phase 0 (freeze the Python
