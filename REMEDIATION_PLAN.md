@@ -298,19 +298,38 @@ reading at all — both replay via `--test` CSV injection, which bypasses it —
 so this fix has no regression coverage from either fixture; P0 already calls
 out synthetic binary fixtures as future work for exactly this gap.
 
-### A8. Defaults are injected before case normalisation
-`engine/steps/base.py:78–99`
+### A8. Defaults were injected before case normalisation **[fixed defensively]**
+`engine/steps/base.py`
 
-Stage 2 injects `[defaults]` under uppercase keys; Stage 3 lowercases all
-columns; duplicates are then coalesced with `groupby(level=0, axis=1).first()`.
-`first()` picks by column position, so whether a real header value or an
-injected constant survives depends on column ordering — which is itself
-non-deterministic (A10). A frame carrying a genuine `exposure` can be
-overwritten by the config default.
+Originally written up as: Stage 2 injects `[defaults]` under uppercase keys;
+Stage 3 lowercases all columns; duplicates are then coalesced with
+`groupby(level=0, axis=1).first()`, which picks by column position, so
+whether a real header value or an injected constant survives depends on
+column ordering.
 
-**Fix.** Reorder: normalise case first, then inject a default only where the
-column is genuinely absent. This also removes the need for the deprecated
-`axis=1` groupby (B2).
+**Re-verified before fixing, since A5/A7 had already shown a
+read-the-code-only audit can overstate a bug.** Reconstructed the exact
+Stage 2 → Stage 3 sequence in isolation and could not reproduce the claimed
+overwrite. Two things account for it: default injection only ever *appends*
+a new column (it's skipped outright when the exact-case key already exists),
+so an injected default always lands to the right of any pre-existing genuine
+column; and `groupby(axis=1).first()` genuinely coalesces row-by-row — first
+*non-null* wins, verified separately with complementary-NaN columns — not
+"leftmost column regardless of content." Given real FITS/XISF data's
+consistent uppercase-keyword convention, no realistic case produces the
+described overwrite.
+
+**Fixed anyway**, as a defensive simplification rather than a behavioural
+correction: column case is now normalised *before* default injection, which
+removes the implicit dependency on append-order and file-scan-order the old
+sequence rested on, regardless of whether it was ever shown to misbehave. No
+output change on either fixture, as expected.
+
+The deprecated `axis=1` groupby call itself is **not** removed by this —
+duplicate columns can still arise from genuinely differently-cased raw
+headers even post-reorder, so the call remains, and its pandas 2.2
+deprecation (removed in pandas 3) is left for the Bucket B batch (B2) as a
+separate, mechanical fix.
 
 ### A9. Row order is non-deterministic — `first()` aggregations are unstable
 `engine/extractor.py:71–77`, `engine/steps/aggregate.py:50`
@@ -527,8 +546,10 @@ A6   dead [override] entries           ← 2nd bug (SQM list) found    [done, 91
                                           fixing the 1st
 A7   HDU selection                     ← "HISTORY collapse" half     [done, 63f5886]
                                           disproven; other half real
+A8   default-injection ordering        ← not reachable on real data; [done, 784f831]
+                                          fixed defensively anyway
  │
-A8 · A12                               ← one commit + attributed diff each
+A12                                     ← changes output; needs care
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
