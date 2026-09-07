@@ -55,6 +55,14 @@ CSV, the entire structured part of the text report — is mechanical.
 > green differential diff — see hazard 13: config-driven behaviour the
 > two-fixture corpus does not exercise.
 
+Both implementations run under the **committed** `golden_tests/golden_config.ini`,
+passed via `--config`. This is not incidental: until 2026-09-07 the harness used
+the repo's gitignored `config.ini`, so the references only reproduced on one
+machine (a clean clone failed 2/2 — wrong site, wrong `USEOBSDATE` grouping,
+different FWHM/SQM). A differential harness needs a configuration both binaries
+can actually load, so the Rust port must accept `--config` and parse that exact
+file.
+
 Enforced by a differential harness (Phase 6) that runs both implementations over
 the committed corpus in CI. This is why `REMEDIATION_PLAN.md` P0 is a hard
 prerequisite: without a portable fixture corpus there is nothing to test parity
@@ -428,7 +436,15 @@ under. Checked against the repo's live `config.ini` (2026-09-07):
 | `[override]` keyword remap, incl. a **dead** entry (`SWCREATOR` — not a real internal column, warns and no-ops, A6) | **Yes** — live config carries both live and dead entries | Port must emit the same warning and no-op, not error. |
 | `[equipmentoverrides]` (v2.1.1) | **No** — generated template is all sentinels | Sentinel/blank ⇒ skip; any other value ⇒ force into the column for every row, after default injection. |
 | `[filters]` name→code map | Partial — only the filters present in the two fixtures | Unmapped filter ⇒ the original name string passes through (`aggregate.py::map_filter`). |
-| `[secret]` / light-pollution API | Not used by the summary/CSV path | Out of parity scope. |
+| `[secret]` / light-pollution API | Not used by the summary/CSV path | Out of parity scope; omitted from `golden_config.ini`. |
+
+Fixture coverage of the *data* paths, checked the same way:
+
+| Path | Covered? | Notes |
+|---|---|---|
+| Directory-aware dedup key (A2) | **Yes** — `sh2101_calib_raw.csv` carries `SOURCE_PATH` | Normal `(dirname, base)` keying. |
+| Degraded filename-only dedup + warning | **Yes** — `sadr_raw.csv` predates A2 and has no `SOURCE_PATH` | The corpus exercises both branches of hazard 10 by accident. Preserve that: do not regenerate `sadr_raw.csv`. |
+| `DARKFLAT` / flat-dark matching (A11) | **No** — neither fixture contains one | Verified in Python with a targeted synthetic case; do the same in Rust. |
 
 Whatever is not covered here gets a targeted Rust unit test rather than
 leaning on the byte diff.
@@ -473,7 +489,7 @@ covers.
 | **1** | Cargo scaffold, `clap` CLI, config parser (incl. `[equipmentoverrides]`, v2.1.1), `--test` CSV ingest **only** — with pandas-equivalent dtype inference (hazard 14) | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
 | **2** | The six pipeline steps as pure functions over `Vec<Frame>`, incl. `NormalizeHeadersStep` Stage 3b (equipment value overrides, v2.1.1) | The bulk of the logic; fully exercised by Phase 1's CSV path |
 | **3** | Exporter + `reports.py` — the byte-parity grind | Hazard 1 lives here |
-| **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise; validate against the synthetic binary fixtures from remediation P0 |
+| **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise. **Prerequisite:** `REMEDIATION_PLAN.md` P0 item 3 — hand-built FITS/XISF fixtures under `golden_tests/fixtures/binary/` — was never done and that directory does not exist. Build it as the first task of this phase, including a tile-compressed `.fits.fz` case. |
 | **5** | `rayon` parallelism; release matrix for Windows / Linux (`musl` static) / macOS, x86-64 and arm64 | Optimise only once correct |
 | **6** | Differential harness in CI: both binaries over the full corpus, byte-compare modulo the `Generated` line | Ongoing guarantee |
 
