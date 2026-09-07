@@ -19,7 +19,7 @@ import pandas as pd
 import re
 import logging
 from models import SessionState
-from constants import InternalColumns
+from constants import InternalColumns, RegexPatterns
 
 class DeduplicateStep:
     """
@@ -45,11 +45,18 @@ class DeduplicateStep:
         orig_count = len(df)
 
         # --- Stage 1: Base Filename Extraction ---
-        # We use a non-greedy regex to strip off WBPP postfixes (e.g., _c, _cc, _r, _rn) 
-        # to identify the original capture name. 
+        # Strip off a WBPP postfix chain (e.g. _c, _c_cc, _c_lps_r) to
+        # identify the original capture name.
         # Example: 'M31_Light_001_c.xisf' and 'M31_Light_001.fits' both map to 'M31_Light_001'
+        #
+        # A1 in REMEDIATION_PLAN.md: the previous pattern here was
+        # unanchored and matched a bare '_c' anywhere in the filename
+        # (e.g. inside '_calibrated_'), then swallowed everything up to
+        # the extension -- silently merging unrelated captures. See
+        # constants.RegexPatterns.WBPP_FILENAME for the anchored
+        # replacement and its rationale.
         df['base_filename'] = df[InternalColumns.FILENAME].str.extract(
-            r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)',
+            RegexPatterns.WBPP_FILENAME,
             flags=re.IGNORECASE
         )[0]
 
@@ -109,7 +116,14 @@ class DeduplicateStep:
                 kind='mergesort'
             ).iloc[0]
             final_rows.append(match)
-            
+
+            if len(group) > 1:
+                dropped = [f for f in group[InternalColumns.FILENAME] if f != match[InternalColumns.FILENAME]]
+                logger.debug(
+                    f"Deduplication: kept '{match[InternalColumns.FILENAME]}', "
+                    f"dropped {dropped} (same base '{base}' in '{dedup_dir}')"
+                )
+
         # Reconstruct the dataframe from the unique selection
         if final_rows:
             new_df = pd.DataFrame(final_rows).drop(columns=['base_filename', 'ext_rank', '_dedup_dir'])

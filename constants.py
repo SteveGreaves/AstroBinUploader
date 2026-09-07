@@ -131,7 +131,45 @@ class ImageType(str, Enum):
     MASTER_DARKFLAT = 'MASTERDARKFLAT'
     DARK_FLAT = 'DARKFLAT'
 
+class RegexPatterns:
+    """
+    Centralized filename-parsing patterns.
+
+    Previously duplicated ad hoc across engine/extractor.py and
+    engine/steps/deduplicate.py, so a fix to one copy could leave the other
+    behind. Collected here per the future_work.md 'Centralise Regex
+    Patterns' item.
+    """
+    # Splits a WBPP-produced filename into (base capture name, WBPP postfix
+    # chain, extension). The postfix chain is only recognized when it
+    # *starts* with the calibration marker ('_c' or '_cc') -- WBPP always
+    # calibrates before any later stage (cosmetic correction, light
+    # pollution suppression, registration), so a real postfix chain is
+    # never just '_r' or '_b' on its own. This deliberately excludes a more
+    # permissive "any short trailing token" match: several rigs use bare
+    # single-letter filter names (R/G/B/S), and 'Target_Filter_R.fits'
+    # must not be mistaken for a postfixed 'Target_Filter.fits'.
+    #
+    # Vocabulary: 'c' (calibrated), 'cc' (cosmetic correction), 'r'
+    # (registered/aligned), 'rn' (registered+normalized), 'd' (debayered),
+    # 'b' (?), 's' (?) were the tokens implied by the original code's
+    # docstring; 'lps' (Light Pollution Suppression) was added after being
+    # found in real WBPP output (see REMEDIATION_PLAN.md A1). This list is
+    # necessarily incomplete -- WBPP scripts can add their own postfixes --
+    # extend it here if a real dataset surfaces one that isn't recognized.
+    #
+    # A1 in REMEDIATION_PLAN.md: the previous pattern was
+    # r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)' -- unanchored, and
+    # '_c.*' matched a bare '_c' anywhere in the filename (e.g. inside
+    # '_calibrated_') and swallowed everything up to the extension,
+    # silently merging unrelated captures that happened to contain '_c'.
+    WBPP_FILENAME = (
+        r'(.+?)'                                    # base capture name (lazy)
+        r'(_(?:c|cc)(?:_(?:cc|rn|r|d|b|s|lps))*)?'   # optional postfix chain
+        r'(\.xisf|\.fits|\.fit|\.fts)$'              # extension, anchored at end
+    )
+
 # Backward compatibility aliases for legacy module support
 InternalNames = InternalColumns
-StandardizedKeys = InternalColumns 
+StandardizedKeys = InternalColumns
 ImageTypes = ImageType
