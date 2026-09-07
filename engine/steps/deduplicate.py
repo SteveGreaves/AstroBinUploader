@@ -69,10 +69,20 @@ class DeduplicateStep:
                 lambda x: next((v for k, v in ext_priority.items() if str(x).lower().endswith(k)), 9)
             )
             
-            # Sorting logic: 
+            # Sorting logic:
             # 1. Prefer higher extension priority (ext_rank).
             # 2. Prefer shorter filenames (raw files are usually shorter than post-processed ones).
-            match = group.sort_values(['ext_rank', InternalColumns.FILENAME], key=lambda x: x.str.len() if x.name == InternalColumns.FILENAME else x).iloc[0]
+            # kind='mergesort' (stable): when both keys tie -- two genuinely
+            # distinct captures of equal filename length -- the survivor is
+            # then decided by input order, which is deterministic given the
+            # sorted dispatch order from HeaderExtractor (A9 in
+            # REMEDIATION_PLAN.md), rather than by the default quicksort's
+            # unspecified tie placement.
+            match = group.sort_values(
+                ['ext_rank', InternalColumns.FILENAME],
+                key=lambda x: x.str.len() if x.name == InternalColumns.FILENAME else x,
+                kind='mergesort'
+            ).iloc[0]
             final_rows.append(match)
             
         # Reconstruct the dataframe from the unique selection

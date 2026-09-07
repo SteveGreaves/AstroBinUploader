@@ -44,7 +44,11 @@ class AggregationStep:
 
         # Ensure observation dates are proper datetime objects for vectorized math
         df[InternalColumns.DATE_OBS] = pd.to_datetime(df[InternalColumns.DATE_OBS], errors='coerce')
-        df = df.sort_values(InternalColumns.DATE_OBS).reset_index(drop=True)
+        # kind='mergesort' (stable): the default quicksort does not preserve
+        # input order among frames sharing a timestamp, which made ties break
+        # arbitrarily -- and every downstream first()/iloc[0] read depends on
+        # a deterministic order (A9 in REMEDIATION_PLAN.md).
+        df = df.sort_values(InternalColumns.DATE_OBS, kind='mergesort').reset_index(drop=True)
         
         # Identify GLOBAL session statistics based exclusively on Light frames
         lights_mask = df[InternalColumns.IMAGE_TYPE] == ImageType.LIGHT.value

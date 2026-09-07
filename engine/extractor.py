@@ -59,21 +59,35 @@ class HeaderExtractor:
                     if file.lower().endswith(('.fits', '.fit', '.fts', '.xisf')):
                         file_paths.append(os.path.join(root, file))
 
+        # Deterministic dispatch order. os.walk's per-directory file order is
+        # OS/filesystem-dependent, and without this sort the final row order
+        # of raw_df would vary between otherwise-identical runs (see A9 in
+        # REMEDIATION_PLAN.md). Every downstream 'first wins' resolution --
+        # deduplication's survivor pick, the master-preference filters, the
+        # agg('first') columns in AggregationStep, and every .iloc[0] read in
+        # reports.py -- depends on this being stable.
+        file_paths.sort()
+
         total = len(file_paths)
-        headers = []
-        
+        results: Dict[str, Any] = {}
+
         # Parallel Execution: Utilize multiple processes for XML/FITS parsing
         # This is significantly faster for XISF files which involve large XML blocks.
+        # Completion order under as_completed() is nondeterministic, so results
+        # are keyed by their originating path and reassembled in the sorted
+        # dispatch order below rather than appended in completion order.
         with ProcessPoolExecutor() as executor:
             futures = {executor.submit(self.extract_single_file, fp): fp for fp in file_paths}
             for i, future in enumerate(as_completed(futures), 1):
+                fp = futures[future]
                 res = future.result()
                 if res:
-                    headers.append(res)
+                    results[fp] = res
                 # Real-time console progress update
                 print(f"\rScanning files: {i} of {total}...", end="", flush=True)
-        
+
         print("\n") # Ensure next console output starts on a new line
+        headers = [results[fp] for fp in file_paths if fp in results]
         self.logger.info(f"Extraction complete. {len(headers)} valid headers retrieved.")
         return pd.DataFrame(headers)
 
