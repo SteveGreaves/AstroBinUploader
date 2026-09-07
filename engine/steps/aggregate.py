@@ -122,10 +122,27 @@ class AggregationStep:
             InternalColumns.TARGET
         ]
         
-        # Prevent "Lossy Aggregation" by filling missing grouping keys
+        # Prevent "Lossy Aggregation" by filling missing grouping keys.
+        # pandas groupby drops a row outright if any of its key columns is
+        # null, so every grouping key needs a non-null fallback.
+        #
+        # A5 in REMEDIATION_PLAN.md: filling a *numeric* key (gain,
+        # xbinning, exposure are all in agg_cols) with the string "None"
+        # promotes the whole column to object dtype -- as soon as a single
+        # null appears anywhere in it, every value in the column becomes a
+        # Python float/str mix, and the acquisition CSV then writes e.g.
+        # "100.0" instead of the integer "100" AstroBin's importer expects.
+        # In the current pipeline this branch is unreachable for those
+        # three specifically: NormalizeHeadersStep's Stage 7 hardening
+        # (engine/steps/base.py) unconditionally fills and casts all three
+        # to a non-null numeric dtype before this step ever runs. This is
+        # nonetheless fixed to fail safe rather than silently corrupting
+        # output if that hardening guarantee is ever changed or bypassed.
         for col in agg_cols:
             if col not in df.columns:
                 df[col] = "None"
+            elif pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = df[col].fillna(0)
             else:
                 df[col] = df[col].fillna("None")
 
