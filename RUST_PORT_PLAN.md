@@ -4,9 +4,9 @@
 
 **Yes, this is possible.** There is no capability in the Python codebase that
 Rust cannot provide, and no dependency that forces a C runtime if the FITS
-reader is hand-written. The result can be a single statically-linked
-`x86_64-unknown-linux-musl` binary of roughly 3–5 MB with no Python, no
-libcfitsio, and no shared-library requirements.
+reader is hand-written. The result is a small (~3–5 MB) self-contained binary
+per target — Windows, Linux and macOS — with no Python, no libcfitsio, and no
+shared-library requirements (a fully static `musl` build on Linux).
 
 Two honest caveats, stated up front rather than buried:
 
@@ -18,8 +18,8 @@ Two honest caveats, stated up front rather than buried:
    becomes the contract.
 2. **One output block is expensive to match byte-for-byte** — the
    `pandas.DataFrame.to_string()` table appended to the bottom of the session
-   summary. It is emulable, but it is the single largest risk item in the port
-   and it needs a decision from you (see "Decision required" below).
+   summary. It is emulable, but it is the single largest risk item in the
+   port. Decided: reproduce it byte-faithfully (see "Decisions" below).
 
 Everything else — FITS/XISF parsing, the six pipeline steps, the acquisition
 CSV, the entire structured part of the text report — is mechanical.
@@ -280,39 +280,24 @@ most important thing to plan around, and it is almost entirely hazard 1.
 
 ---
 
-## Decision required
+## Decisions (settled 2026-09-07)
 
-**How faithful must the trailing `to_string()` table be?**
-
-- **(a) Byte-faithful — meets the requirement as you stated it.**
-  Reverse-engineer pandas' formatter for the shapes this program actually
-  produces: all-numeric plus one or two string columns, no nulls, no row or
-  column truncation. That is a small, closed subset of pandas' renderer, and it
-  can be property-tested against real pandas output over generated frames, so it
-  is verifiable rather than a guess. Cost: ~150 lines plus the test harness, and
-  it is the bulk of Phase 3's 40%. **This is achievable — nothing here is a
-  blocker, only effort.**
-- **(b) Documented divergence — available if you'd rather not pay for it.**
-  Emit a clean fixed-width table of your own design and accept that this one
-  trailing block differs. The acquisition CSV — the part AstroBin actually
-  consumes — stays byte-identical either way, as does the whole structured
-  portion of the summary above it. What you would give up is byte-parity on a
-  human-readable preview that restates numbers already printed above it.
-
-The requirement you set was "exactly as this code does", and **(a)** is what
-delivers that; I have costed it rather than argued against it. **(b)** exists
-only so the price is visible and the trade is yours to make. Tell me which and
-I will plan Phase 3 accordingly.
-
-## Other open questions
-
-1. Target platforms — Linux only, or also Windows/macOS? Affects the static
-   linking strategy but nothing architectural.
-2. Should the Rust binary keep `--debug`'s per-step CSV dumps? They are a
-   pandas-shaped diagnostic; the natural Rust equivalent is structured `tracing`
-   output, which is not byte-comparable. Suggest keeping the dumps only for
-   `debug_step_00_RawHeaders.csv`, since that is the fixture-capture mechanism
-   the whole test strategy depends on.
-3. Should the two implementations coexist long-term, or is Rust a replacement?
-   If coexistence, the differential harness becomes permanent CI; if
-   replacement, it can be retired after a release of overlap.
+1. **`to_string()` fidelity: (a) byte-faithful.** The requirement is "exactly
+   as this code does", so Phase 3 reimplements the closed subset of pandas'
+   formatter this program actually exercises (all-numeric plus one or two
+   string columns, no nulls, no truncation) and property-tests it against real
+   pandas output over generated frames. ~150 lines + test harness; the bulk of
+   Phase 3.
+2. **Target platforms: Windows, Linux, and macOS — all three.** Build matrix:
+   `x86_64-unknown-linux-musl` (static), `x86_64-pc-windows-msvc` and
+   `aarch64-pc-windows-msvc`, `x86_64-apple-darwin` and `aarch64-apple-darwin`.
+   The hand-written FITS reader keeps every target free of a C runtime. No
+   architectural impact — only the release/CI matrix grows.
+3. **`--debug` CSV dumps: keep `debug_step_00_RawHeaders.csv` only.** That file
+   is the fixture-capture mechanism the parity strategy depends on, so it must
+   stay byte-comparable. The remaining per-step dumps become structured
+   `tracing` output (not byte-compared).
+4. **Rust is the eventual replacement, not a permanent twin.** The differential
+   harness runs during development and for one release of overlap, then
+   retires. Test infrastructure is not to be over-built beyond that horizon —
+   the current two-fixture golden corpus is the working baseline for now.
