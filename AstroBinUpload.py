@@ -37,61 +37,7 @@ from engine.steps.geocode import GeocodeStep
 from engine.steps.aggregate import AggregationStep
 from engine.exporter import Exporter
 from models import SessionState
-
-APP_VERSION = '2.0.3'
-
-def verify_engine_integrity(logger: logging.Logger):
-    """
-    Ensures all imported engine modules match the application version.
-    
-    This prevents 'Frankenstein' installations where a user might have 
-    mixed files from different versions of the utility.
-    """
-    import engine.loader
-    import engine.extractor
-    import engine.processor
-    import engine.reports
-    import engine.exporter
-    import engine.steps.base
-    import engine.steps.optical
-    import engine.steps.deduplicate
-    import engine.steps.calibration
-    import engine.steps.geocode
-    import engine.steps.aggregate
-    import models
-    import constants
-    import pipeline
-
-    modules = [
-        ('loader', engine.loader),
-        ('extractor', engine.extractor),
-        ('processor', engine.processor),
-        ('reports', engine.reports),
-        ('exporter', engine.exporter),
-        ('steps.base', engine.steps.base),
-        ('steps.optical', engine.steps.optical),
-        ('steps.deduplicate', engine.steps.deduplicate),
-        ('steps.calibration', engine.steps.calibration),
-        ('steps.geocode', engine.steps.geocode),
-        ('steps.aggregate', engine.steps.aggregate),
-        ('models', models),
-        ('constants', constants),
-        ('pipeline', pipeline)
-    ]
-
-    mismatches = []
-    for name, mod in modules:
-        mod_ver = getattr(mod, '__version__', 'MISSING')
-        if mod_ver != APP_VERSION:
-            mismatches.append(f"{name} ({mod_ver})")
-
-    if mismatches:
-        err_msg = f"CRITICAL: Engine Integrity Check Failed! Version mismatch in modules: {', '.join(mismatches)}. Expected: {APP_VERSION}"
-        logger.error(err_msg)
-        print(f"\n[INTEGRITY ERROR]: {err_msg}")
-        sys.exit(1)
-    
-    logger.info(f"Engine integrity verified for v{APP_VERSION}")
+from _version import __version__ as APP_VERSION
 
 def initialise_logging(log_filename: str) -> logging.Logger:
     """
@@ -194,9 +140,6 @@ def main():
     # Initialize the centralized logging system
     log_file = os.path.join(output_dir, 'AstroBinUploader.log')
     logger = initialise_logging(log_file)
-    
-    # NEW: Verify that all engine components are in version parity
-    verify_engine_integrity(logger)
 
     logger.info("Logging initialized.")
     if args.debug:

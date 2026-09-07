@@ -1,4 +1,3 @@
-__version__ = '2.0.3'
 """
 Data Exporter Module - AstroBin Upload Utility v2.0.2
 
