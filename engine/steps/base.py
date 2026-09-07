@@ -230,12 +230,13 @@ class NormalizeHeadersStep:
 
     def _execute_master_preference(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Final authority on calibration hierarchy. 
-        If a group of frames (same hardware axes) contains a MASTER, 
+        Final authority on calibration hierarchy.
+        If a group of frames (same hardware axes) contains a MASTER,
         discard everything else in that group.
         """
+        logger = logging.getLogger("AstroBinV2")
         itype_col = InternalColumns.IMAGE_TYPE
-        
+
         # 1. Identify Calibration vs Light using original labels
         def is_cal(val):
             v = str(val).upper()
@@ -254,16 +255,26 @@ class NormalizeHeadersStep:
             # Stripping 'MASTER' and removing spaces ensures 'MASTER FLAT' groups with 'FLAT'
             base_type = orig_itype.replace('MASTER', '').replace(' ', '').strip()
             
-            # Use raw numeric values for precise hardware grouping
+            # Use raw numeric values for precise hardware grouping. This
+            # runs before Stage 7's core-column hardening, so GAIN/EGAIN
+            # may still be genuinely non-numeric or missing here.
             try:
                 gain = int(round(float(row[InternalColumns.GAIN])))
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Master preference: unparseable GAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 0 ({e})"
+                )
                 gain = 0
-                
+
             try:
                 # Reduce precision to 2 decimals to bridge master/raw EGAIN differences
                 egain = f"{float(row[InternalColumns.EGAIN]):.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Master preference: unparseable EGAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 1.00 ({e})"
+                )
                 egain = "1.00"
                 
             binning = str(row[InternalColumns.BINNING]).strip()
@@ -278,7 +289,11 @@ class NormalizeHeadersStep:
             if base_type in ['DARK', 'BIAS']:
                 try:
                     duration = f"{float(row[InternalColumns.DURATION]):.2f}"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(
+                        f"Master preference: unparseable DURATION for "
+                        f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 0.00 ({e})"
+                    )
                     duration = "0.00"
                 return (base_type, gain, egain, binning, duration)
             else:
@@ -289,8 +304,7 @@ class NormalizeHeadersStep:
         # 3. Master Preemption: Within each group, if a Master exists, keep ONLY one master.
         final_cals = []
         dropped_count = 0
-        logger = logging.getLogger("AstroBinV2")
-        
+
         for group_key, group in cals.groupby('_group_key'):
             is_master_mask = group[itype_col].astype(str).str.upper().str.contains('MASTER', na=False)
             if is_master_mask.any():

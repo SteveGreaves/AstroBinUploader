@@ -15,6 +15,13 @@ import logging
 from models import SessionState
 from constants import InternalColumns, ImageType
 
+# EGAIN is treated as "not meaningfully set" when it sits within this
+# tolerance of the NormalizeHeadersStep default (1.0) -- a value that close
+# to the placeholder is far more likely to be the unset default than a
+# genuine electronic gain reading of exactly 1.0 e/ADU, so the hybrid key
+# falls back to the linear integer GAIN instead.
+EGAIN_UNSET_TOLERANCE = 0.0001
+
 class CalibrationMatcherStep:
     """
     Associates calibration frames with their corresponding LIGHT frames.
@@ -34,16 +41,23 @@ class CalibrationMatcherStep:
             try:
                 egain_val = float(row[InternalColumns.EGAIN])
                 # Use a rounded signature (2 decimals) to bridge precision differences (0.2467 -> 0.25)
-                if abs(egain_val - 1.0) > 0.0001:
+                if abs(egain_val - 1.0) > EGAIN_UNSET_TOLERANCE:
                     return f"E_{egain_val:.2f}"
-            except:
-                pass
-            
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Hybrid gain key: unparseable EGAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, falling back to GAIN ({e})"
+                )
+
             # Fallback to Linear Gain anchor
             try:
                 gain_val = int(round(float(row[InternalColumns.GAIN])))
                 return f"G_{gain_val}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Hybrid gain key: unparseable GAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using G_0 ({e})"
+                )
                 return "G_0"
 
         df[InternalColumns.GAIN_MATCH] = df.apply(create_hybrid_key, axis=1)

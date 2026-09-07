@@ -20,6 +20,13 @@ from datetime import timedelta
 from models import SessionState
 from constants import ImageType, InternalColumns
 
+# A gap longer than this between consecutive light frames is treated as the
+# boundary between two separate observation sessions (e.g. two different
+# nights). 5 hours comfortably exceeds a typical meridian flip or brief
+# cloud-cover pause within one night's imaging run, while still being well
+# short of the daylight gap between one night and the next.
+SESSION_GAP_HOURS = 5
+
 class AggregationStep:
     """
     Groups and summarizes the processed metadata into export-ready session stats.
@@ -57,7 +64,7 @@ class AggregationStep:
         if not lights.empty:
             # Session Detection: Any gap larger than 5 hours indicates a new session
             time_diff = lights[InternalColumns.DATE_OBS].diff()
-            session_count = (time_diff > pd.Timedelta(hours=5)).cumsum().max() + 1
+            session_count = (time_diff > pd.Timedelta(hours=SESSION_GAP_HOURS)).cumsum().max() + 1
             
             # Temporal Bounds
             start_date = lights[InternalColumns.DATE_OBS].min().strftime('%Y-%m-%d')
@@ -76,7 +83,7 @@ class AggregationStep:
         if not state.config.use_obs_date:
             logger.debug("Applying overnight date shifting")
             time_diff = df[InternalColumns.DATE_OBS].diff()
-            session_ids = (time_diff > pd.Timedelta(hours=5)).cumsum()
+            session_ids = (time_diff > pd.Timedelta(hours=SESSION_GAP_HOURS)).cumsum()
             
             def calculate_ref_date(ts):
                 # If taken before noon, it belongs to the previous calendar day

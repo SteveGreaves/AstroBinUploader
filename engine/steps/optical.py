@@ -18,6 +18,17 @@ import logging
 from models import SessionState
 from constants import ImageType, InternalColumns
 
+# arcsec/pixel = (pixel size in microns / focal length in mm) * ARCSEC_PER_RADIAN
+# 206265 is the number of arcseconds in one radian; the standard plate-scale
+# formula uses it directly because pixel size (microns) and focal length
+# (mm) already carry a compensating factor-of-1000 unit difference.
+ARCSEC_PER_RADIAN = 206.265
+
+# FWHM (Full Width at Half Maximum) is approximated here as twice the HFR
+# (Half Flux Radius) -- a common rule-of-thumb relationship between the two
+# star-size metrics, not a precise physical derivation.
+FWHM_TO_HFR_RATIO = 2.0
+
 
 def _python_round(series: pd.Series, ndigits: int = 2) -> pd.Series:
     """
@@ -92,12 +103,12 @@ class OpticalParameterStep:
         # 'if flen > 0 else 1.0' guard exactly (NaN > 0 is False either way).
         flen = pd.to_numeric(lights[InternalColumns.FOCAL_LENGTH], errors='coerce')
         pix = pd.to_numeric(lights[InternalColumns.PIXEL_SIZE], errors='coerce')
-        imscale = (pix / flen * 206.265).where(flen > 0, 1.0)
+        imscale = (pix / flen * ARCSEC_PER_RADIAN).where(flen > 0, 1.0)
 
         # 3. FWHM Calculation, vectorized.
         # FWHM (Full Width at Half Maximum) is approximately HFR * 2. We
         # multiply by image scale to convert it to arcseconds.
-        fwhm = (hfr * imscale * 2).where(hfr >= 0.0, 0.0)
+        fwhm = (hfr * imscale * FWHM_TO_HFR_RATIO).where(hfr >= 0.0, 0.0)
 
         # 4. Rounding -- via _python_round, not pandas'/numpy's .round(),
         # to avoid disagreeing at exact decimal boundaries (A12).
