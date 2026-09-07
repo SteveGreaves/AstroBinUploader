@@ -29,9 +29,13 @@ CSV, the entire structured part of the text report — is mechanical.
 ## Parity contract
 
 > The Rust binary reproduces, byte for byte, the `*_acquisition.csv` and
-> `*_session_summary.txt` produced by Python `v2.1.0` for every fixture in
+> `*_session_summary.txt` produced by Python `v2.1.1` for every fixture in
 > `golden_tests/fixtures/`, with the sole exception of the
 > `Generated <timestamp>` line.
+>
+> Pin the target by reading the code **at the `v2.1.1` tag**, not by trusting a
+> green differential diff — see hazard 13: config-driven behaviour the
+> two-fixture corpus does not exercise.
 
 Enforced by a differential harness (Phase 6) that runs both implementations over
 the committed corpus in CI. This is why `REMEDIATION_PLAN.md` P0 is a hard
@@ -330,6 +334,23 @@ formula shape; do not substitute a different great-circle form.
   on the frame. This mirrors `calibration.py`, which never constrains
   dark/bias matching on filter.
 
+### 13. Config-driven behaviour the two-fixture corpus does not exercise
+
+The differential harness only proves parity for the config the fixtures run
+under. Checked against the repo's live `config.ini` (2026-09-07):
+
+| Path | Covered by corpus? | Notes for the port |
+|---|---|---|
+| `USEOBSDATE = False` — overnight date-shift (`aggregate.py` `calculate_ref_date`, noon boundary) | **Yes** — live config sets `False` | The `True` branch (plain `dt.date`) is **not** exercised; unit-test it directly. |
+| `[sites]` DB lookup, incl. nested `[[...]]` and a bare `[[Name]]` section | **Yes** — live config has 4 site entries | configobj depth-by-bracket-count parsing + the mixed-rounding equality in `_find_site_in_db` (hazard 3). |
+| `[override]` keyword remap, incl. a **dead** entry (`SWCREATOR` — not a real internal column, warns and no-ops, A6) | **Yes** — live config carries both live and dead entries | Port must emit the same warning and no-op, not error. |
+| `[equipmentoverrides]` (v2.1.1) | **No** — generated template is all sentinels | Sentinel/blank ⇒ skip; any other value ⇒ force into the column for every row, after default injection. |
+| `[filters]` name→code map | Partial — only the filters present in the two fixtures | Unmapped filter ⇒ the original name string passes through (`aggregate.py::map_filter`). |
+| `[secret]` / light-pollution API | Not used by the summary/CSV path | Out of parity scope. |
+
+Whatever is not covered here gets a targeted Rust unit test rather than
+leaning on the byte diff.
+
 ---
 
 ## Phasing
@@ -339,9 +360,9 @@ covers.
 
 | Phase | Scope | Why here |
 |---|---|---|
-| **0** | Freeze the contract — **done**: `v2.1.0` tagged, goldens regenerated, PR #12 open. Merge before Phase 1. | Nothing testable without it |
-| **1** | Cargo scaffold, `clap` CLI, config parser, `--test` CSV ingest **only** | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
-| **2** | The six pipeline steps as pure functions over `Vec<Frame>` | The bulk of the logic; fully exercised by Phase 1's CSV path |
+| **0** | Freeze the contract — **done**: `v2.1.1` tagged and on `main`, goldens regenerated. | Nothing testable without it |
+| **1** | Cargo scaffold, `clap` CLI, config parser (incl. `[equipmentoverrides]`, v2.1.1), `--test` CSV ingest **only** | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
+| **2** | The six pipeline steps as pure functions over `Vec<Frame>`, incl. `NormalizeHeadersStep` Stage 3b (equipment value overrides, v2.1.1) | The bulk of the logic; fully exercised by Phase 1's CSV path |
 | **3** | Exporter + `reports.py` — the byte-parity grind | Hazard 1 lives here |
 | **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise; validate against the synthetic binary fixtures from remediation P0 |
 | **5** | `rayon` parallelism; release matrix for Windows / Linux (`musl` static) / macOS, x86-64 and arm64 | Optimise only once correct |
