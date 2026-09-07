@@ -236,16 +236,35 @@ group-key sort order is type-dependent *by design* here (numeric columns stay
 numeric), not as a side effect of null corruption. See `RUST_PORT_PLAN.md`
 hazard 2.
 
-### A6. The `SWCREATOR` override is dead
-`config.ini.example:34`, `constants.py:104`
+### A6. Dead `[override]` entries — typo'd target and list-value corruption **[proven, fixed]**
+`config.ini.example`, `engine/loader.py`
 
 `[override] SWCREATOR = CREATOR` writes a column named `swcreator`. Every
 consumer reads `InternalColumns.SWCREATE == 'swcreate'`. The capture-software
 override has never worked; users editing it see no effect and no warning.
+Confirmed present in the user's own real `config.ini`, not just the example.
 
-**Fix.** Correct the shipped key to `SWCREATE`. More importantly, validate every
-`[override]` target against `InternalColumns` at config-load time and log a
-warning for unknown targets — this class of silent typo will otherwise recur.
+**Second bug found in the same function while fixing the first**:
+`_normalize_overrides` only checked `isinstance(v, str)`. ConfigObj parses a
+comma-separated override value (`SQM = AOCSKYQ, AOCSKYQU`, also present in
+the user's real config) into a native Python **list** before this method ever
+runs, so it fell into the scalar branch and got `str()`'d whole — a
+one-element list containing the literal text `"['AOCSKYQ', 'AOCSKYQU']"`,
+which can never match a real column. That override — try `AOCSKYQ`, fall
+back to `AOCSKYQU` — has been entirely dead too.
+
+**Fixed**: corrected the shipped template's key (the user's own `config.ini`
+is left untouched — that's a behavioural choice for them, not a code-fix);
+added an `isinstance(v, list)` branch using the list's own items; added
+load-time validation of every `[override]` target against the known internal
+column names, logging a warning naming the likely typo. Confirmed the warning
+fires correctly against the user's real config, naming `SWCREATOR` and
+suggesting `swcreate`.
+
+Both bugs were live but produced no observed output change on either
+fixture — neither's raw headers contain a `CREATOR` or `AOCSKYQ`/`AOCSKYQU`
+keyword — so this closes two dead configuration paths without an available
+before/after example. The fix is `git log` `91b77f6`.
 
 ### A7. Only HDU 0 is read, and repeated cards are collapsed
 `engine/extractor.py:137`
@@ -490,8 +509,10 @@ A3 · A4  cluster stealing / geodesic   ← haversine, not raw geopy    [done, 2
                                           (perf; see commit message)
 A5   numeric group-key fillna          ← not actually reachable      [done, 950ffca]
                                           today; fixed defensively
+A6   dead [override] entries           ← 2nd bug (SQM list) found    [done, 91b77f6]
+                                          fixing the 1st
  │
-A6 · A7 · A8 · A12                     ← one commit + attributed diff each
+A7 · A8 · A12                          ← one commit + attributed diff each
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
