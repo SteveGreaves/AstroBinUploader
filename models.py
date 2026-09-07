@@ -12,7 +12,7 @@ Core Components:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 import pandas as pd
 
 @dataclass
@@ -28,7 +28,6 @@ class AppConfig:
         overrides (Dict[str, List[str]]): User-defined hardware keyword mappings.
         filters (Dict[str, Any]): Map of filter names to AstroBin numeric IDs.
         sites (Dict[str, Dict[str, Any]]): Database of previously geocoded site coordinates.
-        secret (Dict[str, str]): API keys and contact info for external services.
         use_obs_date (bool): If True, use calendar capture date; if False, shift overnight sessions.
         precision (int): Decimal precision for coordinate rounding and fuzzy matching.
     """
@@ -36,7 +35,6 @@ class AppConfig:
     overrides: Dict[str, List[str]]
     filters: Dict[str, Any]
     sites: Dict[str, Dict[str, Any]]
-    secret: Dict[str, str]
     use_obs_date: bool = True
     precision: int = 4
 

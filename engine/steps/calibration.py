@@ -11,7 +11,6 @@ Improvements:
 """
 
 import pandas as pd
-import numpy as np
 import logging
 from models import SessionState
 from constants import InternalColumns, ImageType

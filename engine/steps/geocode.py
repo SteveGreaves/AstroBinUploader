@@ -14,9 +14,9 @@ geographical site information. It performs two primary functions:
 import pandas as pd
 import numpy as np
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 from models import SessionState
-from constants import InternalColumns, ImageType, ConfigSections
+from constants import InternalColumns, ImageType
 
 # Mean Earth radius in metres (IUGG value), used by the haversine distance
 # below.

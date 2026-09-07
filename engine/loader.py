@@ -85,7 +85,6 @@ class ConfigLoader:
             overrides=self._normalize_overrides(normalized.get(ConfigSections.OVERRIDE, {})),
             filters=normalized.get(ConfigSections.FILTERS, {}),
             sites=normalized.get(ConfigSections.SITES, {}),
-            secret=normalized.get(ConfigSections.SECRET, {}),
             use_obs_date=use_obs_date
         )
 

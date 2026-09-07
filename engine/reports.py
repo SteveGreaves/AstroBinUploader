@@ -12,7 +12,7 @@ intelligently grouping frames by site, target, and image type.
 
 import logging
 import pandas as pd
-from typing import Tuple, Union, List
+from typing import Tuple, Union
 from datetime import datetime
 from constants import ImageType, InternalColumns
 

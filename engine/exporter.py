@@ -15,7 +15,6 @@ Key Outputs:
 """
 
 import os
-import pandas as pd
 import logging
 from models import SessionState
 from constants import ImageType

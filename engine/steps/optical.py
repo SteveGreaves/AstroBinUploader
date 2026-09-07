@@ -14,7 +14,6 @@ Metrics Calculated:
 """
 
 import pandas as pd
-import re
 import logging
 from models import SessionState
 from constants import ImageType, InternalColumns
