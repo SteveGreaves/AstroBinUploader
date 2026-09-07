@@ -352,49 +352,59 @@ isn't deterministic is not a well-defined goal.
 `source_path` after collection; use `kind='mergesort'` (stable) for every
 `sort_values`.
 
-### A10. Master preference discards legitimate masters — **needs your decision**
-`engine/steps/base.py:257`, `engine/steps/calibration.py:157`
+### A10. Master preference discards legitimate masters **[resolved, fixed]**
+`engine/steps/base.py`, `engine/steps/calibration.py`
 
-Both sites do `candidates[is_master_mask].iloc[[0]]` — keep exactly one master
-per hardware group. If you legitimately hold two master darks at the same
-gain/binning/duration from different dates, one is dropped along with its
-`NUMBER` sub-exposure count.
+Both sites did `candidates[is_master_mask].iloc[[0]]` — keep exactly one
+master per hardware group, arbitrarily by scan order. If two master darks at
+the same gain/binning/duration genuinely existed from different dates, one
+was dropped along with its `NUMBER` sub-exposure count.
 
-The comment says this prevents "double-counting between multiple identified
-master versions of the same data", which is right for a re-integration of the
-same subs and wrong for two genuinely separate master sets.
+**User decision**: masters should always be the latest available; there
+normally shouldn't be two in a directory for a given gain/offset in the
+first place, but if there are, prefer the most recent by `DATE-OBS` rather
+than an arbitrary pick.
 
-I have not chosen for you. Options: (a) keep current behaviour, documented;
-(b) deduplicate on content identity (`NUMBER` + date range) and sum the rest;
-(c) sum unconditionally. Tell me which and I will implement it.
+**Fixed** in both locations that make this choice: `base.py`'s
+`_execute_master_preference` (Stage 5, general ingest filter) and
+`calibration.py`'s `resolve_count()` (per-light candidate matching — this
+was unreachable before A13 fixed IMAGETYP normalization; this is the first
+fix to actually exercise it). Both fall back to "first found under the
+deterministic scan order" (A9) if no candidate has a usable `DATE-OBS`.
 
-### A11. Flat-dark matching skips binning *and* master preference
-`engine/steps/calibration.py:176–182`
+Verified live against the SH2 101 fixture (not in the committed corpus): it
+has a genuine duplicate `masterBias` pair (a literal `_(1)` copy file), and
+the debug log now reads the group and the `DATE-OBS` kept for both affected
+groups. Output there is otherwise unchanged — the duplicate pair has
+matching `NUMBER`/exposure/gain, so which one backs the aggregate doesn't
+move the reported numbers.
 
-Darks, bias and flats are all resolved through `resolve_count()` — which applies
-master preference — and all constrain on `BINNING`. Flat-darks do neither:
+### A11. Flat-dark matching skipped binning *and* master preference **[proven live, fixed]**
+`engine/steps/calibration.py`
 
-```python
-df_candidates = cals[
-    cals[IMAGE_TYPE].str.upper().str.contains('DARKFLAT', na=False) & \
-    (cals[FILTER_NAME].str.lower() == str(row[FILTER_NAME]).lower()) & \
-    (cals[GAIN_MATCH] == row[GAIN_MATCH])          # ← no BINNING term
-]
-fd_count = int(df_candidates[NUMBER].sum())        # ← no master preference
-```
+Darks, bias and flats are all resolved through `resolve_count()` — which
+applies master preference — and all constrain on `BINNING`. Flat-darks did
+neither, summing master + raw candidates unconditionally with no binning
+check.
 
-Two consequences. A `MASTERDARKFLAT` and the raws it was built from, both
-present, are **summed** rather than the master preferred — double-counting the
-`flatDarks` column written to the acquisition CSV. And flat-darks shot at a
-different binning match anyway.
+**User decision**: make it consistent with the other three types.
 
-The in-code comment reads "DarkFlats usually don't have Masters in the same way,
-but applying safe logic", which is what makes this easy to skim past — the logic
-is not in fact the same as the other three.
+**Verification found this is a real, live bug, not just a consistency
+gap** — but only once isolated from two pre-existing, overlapping defenses
+that hid it in simpler test cases: `base.py`'s Stage 5 master preference and
+`calibration.py`'s own orphan-pruning both already key on binning for every
+calibration type, including `DARKFLAT`, via an incidental substring match on
+`"DARK"`. The live-reachable case needed two lights at *different* binnings
+(so neither binning's calibration anchors get orphaned) plus two legitimate
+flat-dark masters, one per binning. Under the old code, **both** lights were
+assigned `flatDarks = 1039` (`40 + 999`, both masters summed) regardless of
+their own binning; the fix correctly assigns `40` to the bin-1 light and
+`999` to the bin-2 light.
 
-**Fix.** Route flat-darks through `resolve_count()` and add the `BINNING`
-constraint, making all four calibration classes consistent. This is the same
-decision surface as A10 — resolve them together.
+**Fixed**: routed flat-darks through `resolve_count()` and added the
+`BINNING` constraint, making all four calibration classes identical in
+structure. Neither fixture contains a `DARKFLAT` frame, so this was verified
+with a targeted synthetic reproduction rather than either fixture.
 
 ### A12. Vectorising `OpticalParameterStep` changes rounding **[proven]**
 
@@ -548,10 +558,10 @@ A7   HDU selection                     ← "HISTORY collapse" half     [done, 63
                                           disproven; other half real
 A8   default-injection ordering        ← not reachable on real data; [done, 784f831]
                                           fixed defensively anyway
+A10 · A11  calibration semantics       ← resolved per user decision   [done, 00cb110]
+                                          A11 proven live once isolated
  │
 A12                                     ← changes output; needs care
- │
-A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
 B1–B15 (less B13)                      ← batched; golden diff must be empty
  │
