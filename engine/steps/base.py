@@ -71,26 +71,44 @@ class NormalizeHeadersStep:
                     if col != internal_key and col in df.columns:
                         df.drop(columns=[col], inplace=True)
 
-        # --- Stage 2: Default Injection ---
-        # For any core metadata still missing after extraction and overrides, 
-        # inject the user-defined fallback values.
-        for k, v in config.defaults.items():
-            if k not in df.columns:
-                logger.debug(f"Default Injection: Key '{k}' not found, using default '{v}'")
-                df[k] = v
-
-        # --- Stage 3: Column Standardization ---
-        # Normalize all column names to lowercase for consistent internal processing.
-        # We must also merge any duplicate columns created by case variations (e.g., 'GAIN' and 'gain').
+        # --- Stage 2: Column Standardization ---
+        # Normalize all column names to lowercase for consistent internal
+        # processing, BEFORE default injection. We must also merge any
+        # duplicate columns created by case variations (e.g. 'GAIN' and
+        # 'gain') at this point.
+        #
+        # A8 in REMEDIATION_PLAN.md: default injection used to run first,
+        # against the still-uppercase raw columns, and only *then* would
+        # everything get lowercased and coalesced. That made a default's
+        # survival depend on where its column landed relative to a
+        # differently-cased genuine column once both were lowercased --
+        # itself dependent on non-obvious pandas append-order behaviour.
+        # Normalizing case first and injecting defaults only into columns
+        # that are *still* genuinely absent afterwards removes that
+        # implicit dependency entirely, regardless of whether the original
+        # ordering was ever shown to misbehave on real data (it wasn't,
+        # empirically, for the FITS/XISF uppercase-key convention this
+        # pipeline actually sees -- but nothing enforced that assumption).
         logger.debug("Normalizing all column names to lowercase")
         df.columns = [c.lower() for c in df.columns]
-        
+
         # Identify and merge duplicate columns
         if df.columns.duplicated().any():
             logger.debug("Merging duplicate columns")
             # Group by column name and coalesce (take the first non-null value)
             df = df.groupby(level=0, axis=1).first()
-        
+
+        # --- Stage 3: Default Injection ---
+        # For any core metadata still missing after extraction, overrides,
+        # and case normalization, inject the user-defined fallback values.
+        # Defaults are keyed uppercase in config.ini/AppConfig; lowercase
+        # them here to match the now-normalized dataframe.
+        for k, v in config.defaults.items():
+            k_lower = k.lower()
+            if k_lower not in df.columns:
+                logger.debug(f"Default Injection: Key '{k}' not found, using default '{v}'")
+                df[k_lower] = v
+
         # --- Stage 4: Initial Filtering ---
         # Drop 'MASTERLIGHT' frames.
         # We calculate exposures from individual subs; masters would double the total.
