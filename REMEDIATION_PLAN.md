@@ -89,17 +89,48 @@ Only once step 6 goes green on the current code does the rest of this plan begin
 
 ## Bucket A — defects that change output
 
-**Status: complete.** All thirteen items (A1–A13, including A13, found live
-during validation and not in the original plan) are fixed, each in its own
+**Status: complete.** Fourteen items total (A1–A14 — A13 and A14 both found
+live during validation, not in the original plan) are fixed, each in its own
 commit with its own verification. Roughly half turned out, on rigorous
 re-checking against the real pipeline rather than the code-reading-only
 original audit, to describe a real mechanism but not a currently-reachable
 bug (A5, A7's HISTORY half, A8) — those are noted and fixed defensively
 rather than corrected as regressions, since there was no live behaviour to
 compare against. The other half were proven live, several only visible once
-tested against a second real target directory (SH2 101) rather than the
-single committed fixture: A1, A3/A4, A6, A10/A11, A13. See each item below
-for what was actually verified and how.
+tested against real target directories beyond the single committed Sadr
+fixture — SH2 101 (a second full dataset, masters only) and, for A14, a third
+scenario: the user's actual light-frame directory alongside its real
+*unprocessed* calibration directory (raw bias/dark/flat subs, not masters) —
+the first time this session anything exercised genuine calibration matching
+end to end rather than a synthetic reproduction: A1, A3/A4, A6, A10/A11, A13,
+A14. See each item below for what was actually verified and how.
+
+### A14. Darks/bias report table incorrectly grouped by filter **[proven live, fixed]**
+`engine/reports.py`
+
+Found only once real unprocessed calibration data was available: the capture
+software stamps a `FITSKeyword FILTER='Ha'` into every bias and dark frame's
+header too, not just lights' — presumably recording whatever filter happened
+to be mounted, which is physically meaningless for a bias/dark exposure.
+Confirmed directly in the raw XISF header, not just the filename convention
+that also carries it.
+
+`format_image_type_table`'s calibration branch always grouped by
+`FILTER_NAME` regardless of type. In the tested dataset every dark/bias frame
+happened to carry the same filter tag, so the only visible symptom was a
+misleading label (`MASTERDARKS` showing `Ha` where it should be blank) — but
+a dataset with dark/bias frames captured across more than one actual filter
+position would have fragmented one logical calibration set into multiple
+report rows, each understating its own Frames count.
+
+`calibration.py`'s actual matching (`dark_candidates`, `bias_candidates`) was
+never affected — neither has ever constrained on filter — so the acquisition
+CSV's `darks`/`bias` columns were correct throughout; this was a
+session-summary display bug only. **Fixed** by mirroring `calibration.py`'s
+own semantics: the report's group key now drops `FILTER_NAME` for Dark and
+Bias, keeping it for Flat and FlatDark (which do depend on it there too).
+Verified live: `MASTERBIAS`/`MASTERDARKS` rows now correctly show a blank
+filter column; counts unchanged from before the fix.
 
 These are the real bugs. Each **must** get its own commit with its own attributed
 golden diff: every changed byte traced to a named fix, anything else is a
