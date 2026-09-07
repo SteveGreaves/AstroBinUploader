@@ -21,6 +21,38 @@ import logging
 from models import SessionState
 from constants import InternalColumns, ImageType
 
+
+def _coalesce_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merges columns sharing the same name, keeping the first non-null value
+    across each duplicate-named group (left to right).
+
+    B2 in REMEDIATION_PLAN.md: replaces the deprecated
+    `df.groupby(level=0, axis=1).first()` (FutureWarning on pandas 2.2,
+    removed in pandas 3). The stdlib-suggested direct replacement,
+    `df.T.groupby(level=0).T`, is NOT a safe drop-in here: transposing a
+    DataFrame that mixes numeric and string columns (which this one
+    always does -- e.g. 'exposure' alongside 'imagetyp') upcasts every
+    column to object dtype and turns NaN into None, silently reproducing
+    the exact object-dtype corruption fixed in A5 -- verified directly
+    before writing this. Coalescing within each same-named group's own
+    sub-frame instead keeps each group's original, homogeneous dtype,
+    since duplicate columns share a name precisely because they represent
+    the same logical field. Column order is sorted to match groupby's
+    default `sort=True` exactly, since that's what the replaced call
+    produced. Verified against the original call with `.equals()`, not
+    just eyeballed, across both dtype-mixed and duplicate-plus-unique
+    column-order cases.
+    """
+    if not df.columns.duplicated().any():
+        return df
+    result = {}
+    for name in sorted(df.columns.unique()):
+        sub = df[name]
+        result[name] = sub if isinstance(sub, pd.Series) else sub.bfill(axis=1).iloc[:, 0]
+    return pd.DataFrame(result, index=df.index)
+
+
 class NormalizeHeadersStep:
     """
     Sanitizes raw FITS/XISF metadata into a standardized internal format.
@@ -94,8 +126,7 @@ class NormalizeHeadersStep:
         # Identify and merge duplicate columns
         if df.columns.duplicated().any():
             logger.debug("Merging duplicate columns")
-            # Group by column name and coalesce (take the first non-null value)
-            df = df.groupby(level=0, axis=1).first()
+            df = _coalesce_duplicate_columns(df)
 
         # --- Stage 3: Default Injection ---
         # For any core metadata still missing after extraction, overrides,
