@@ -17,7 +17,7 @@ Key Outputs:
 import os
 import logging
 from models import SessionState
-from constants import ImageType
+from constants import ImageType, InternalColumns
 
 class Exporter:
     """
@@ -58,7 +58,7 @@ class Exporter:
         # 1. Filter for Acquisition CSV (LIGHTS ONLY)
         # The AstroBin bulk upload interface strictly processes light frames. 
         # Calibration frames are summarized elsewhere.
-        acq_source = df[df['imagetyp'] == ImageType.LIGHT.value].copy()
+        acq_source = df[df[InternalColumns.IMAGE_TYPE] == ImageType.LIGHT.value].copy()
 
         # 2. Map Filter Names to IDs
         # AstroBin uses specific numeric IDs for many common filters. These 
@@ -90,7 +90,21 @@ class Exporter:
             'foctemp': 'temperature'
         }
         
-        # Perform selection and renaming in one step
+        # Perform selection and renaming in one step.
+        # B12 in REMEDIATION_PLAN.md: a plain acq_source[list(mapping.keys())]
+        # raises a bare KeyError naming only the missing column, with no
+        # indication of why an expected core column would be absent from
+        # aggregated data at this late a stage. Check explicitly and raise
+        # something a user (or a future maintainer) can actually act on.
+        missing_cols = [c for c in mapping if c not in acq_source.columns]
+        if missing_cols:
+            raise KeyError(
+                f"Aggregated data is missing expected column(s) {missing_cols} "
+                f"required for the acquisition CSV. This usually means a core "
+                f"column was renamed or an AggregationStep reduction rule was "
+                f"dropped -- check engine/steps/aggregate.py's `rules` dict "
+                f"against this module's `mapping`."
+            )
         acq_df = acq_source[list(mapping.keys())].rename(columns=mapping)
         
         # 4. Final Data Hardening & Rounding

@@ -126,10 +126,27 @@ def main():
     args = parser.parse_args()
 
     # --- Step 1: Environment Setup ---
-    
+
     # Resolve absolute paths to ensure reliable file access
     directory_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.directory_paths]
-    
+
+    # B10 in REMEDIATION_PLAN.md: previously unvalidated. A typo'd path
+    # would reach os.makedirs(output_dir, exist_ok=True) below, which
+    # creates every missing intermediate directory including the typo'd
+    # one itself -- silently manufacturing a new, empty directory tree
+    # rather than failing, and the pipeline would then proceed to scan it,
+    # producing a "0 images processed" result with no indication of the
+    # actual mistake. Fail clearly here instead.
+    invalid_paths = [p for p in directory_paths if not os.path.isdir(p)]
+    if invalid_paths:
+        for p in invalid_paths:
+            print(f"[ERROR] Not a directory: {p}")
+        print(
+            "\nOne or more input paths do not exist or are not directories. "
+            "Check for typos before re-running."
+        )
+        sys.exit(1)
+
     # Establish the primary output directory inside the first target path
     output_dir = os.path.join(directory_paths[0], 'AstroBinUploadInfo')
     os.makedirs(output_dir, exist_ok=True)

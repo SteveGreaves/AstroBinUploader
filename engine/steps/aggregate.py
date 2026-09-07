@@ -107,12 +107,14 @@ class AggregationStep:
         df[InternalColumns.START_DATE] = df[InternalColumns.START_DATE].astype(str)
         df[InternalColumns.END_DATE] = df[InternalColumns.END_DATE].astype(str)
 
-        # Progress feedback for long-running aggregations
+        # B1 in REMEDIATION_PLAN.md: this used to be a `for i in
+        # range(1, total_lights + 1): print(...)` loop -- a fake progress
+        # bar. It did no actual per-frame work (the real aggregation below
+        # is one vectorized groupby().agg() call) and, for a large dataset,
+        # wasted real time on nothing but repeated print()+flush() calls
+        # while implying slow per-frame processing that wasn't happening.
         if not lights.empty:
-            total_lights = len(lights)
-            for i in range(1, total_lights + 1):
-                print(f"\rProcessing LIGHT frame {i} of {total_lights}...", end="", flush=True)
-            print("\n")
+            logger.debug(f"Aggregating {len(lights)} light frame(s).")
 
         # --- Stage 3: Aggregation ---
         logger.debug("Grouping and summarizing metadata")
