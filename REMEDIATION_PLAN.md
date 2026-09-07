@@ -190,8 +190,8 @@ calibration-frame coordinate alignment in `_align_coordinates`.
 **Fix.** Use `geopy.distance.distance` — already a dependency — and express the
 threshold in metres as a named constant.
 
-### A5. `fillna("None")` corrupts numeric group keys **[proven]**
-`engine/steps/aggregate.py:150–154`
+### A5. `fillna("None")` corrupts numeric group keys **[proven, fixed]**
+`engine/steps/aggregate.py`, Stage 3 (`agg_cols` grouping-key fill)
 
 ```python
 for col in agg_cols:
@@ -210,16 +210,31 @@ dtype after fillna: object
 2   None     Ha  3
 ```
 
-So as soon as a single NaN appears anywhere in `gain`, the acquisition CSV
-writes `100.0` where it previously wrote `100`. AstroBin's importer expects an
-integer. The output format is therefore **data-dependent**: the reference CSVs
-show `gain,100` only because those datasets happen to have no nulls.
+So a single NaN anywhere in `gain` would make the acquisition CSV write
+`100.0` where it should write the integer `100`.
 
-It also makes the group-key sort order type-dependent, which matters enormously
-for the Rust port (see `RUST_PORT_PLAN.md`, hazard 2).
+**Correction after re-checking against the real pipeline, not just the
+standalone snippet above**: this does not currently happen. `gain`,
+`xbinning` and `exposure` are all unconditionally filled and cast to a
+non-null numeric dtype by `NormalizeHeadersStep`'s Stage 7 hardening
+(`base.py`) before `AggregationStep` ever runs, and nothing between the two
+steps can null them out again — so the promotion shown above is not reachable
+today. **Fixed anyway**: the column is now checked with
+`pd.api.types.is_numeric_dtype` and filled with `0` rather than `"None"` when
+numeric, so a future change to that hardening guarantee fails safe instead of
+silently corrupting the acquisition CSV. Verified against both fixtures with
+no output change, as expected for something that wasn't live.
 
-**Fix.** Fill numeric keys with a numeric sentinel and restore the original
-dtype; reserve `"None"` for genuine string keys (`site`, `filter`, `object`).
+The two `agg_cols` entries that genuinely can be null when this step runs —
+`filter` and `target` — are string columns, where `"None"` is the correct,
+harmless fallback; confirmed live in the SH2 101 data (calibration masters
+with no FILTER/OBJECT header). The `filter` case's downstream display symptom
+was already fixed as part of A13.
+
+Sort-order note for the Rust port still stands, but the premise changes: the
+group-key sort order is type-dependent *by design* here (numeric columns stay
+numeric), not as a side effect of null corruption. See `RUST_PORT_PLAN.md`
+hazard 2.
 
 ### A6. The `SWCREATOR` override is dead
 `config.ini.example:34`, `constants.py:104`
@@ -473,8 +488,10 @@ A1   dedup regex over-truncation       ← anchored, vocab from real   [done, ff
                                           WBPP output (SH2 101)
 A3 · A4  cluster stealing / geodesic   ← haversine, not raw geopy    [done, 2091c68]
                                           (perf; see commit message)
+A5   numeric group-key fillna          ← not actually reachable      [done, 950ffca]
+                                          today; fixed defensively
  │
-A5 · A6 · A7 · A8 · A12                ← one commit + attributed diff each
+A6 · A7 · A8 · A12                     ← one commit + attributed diff each
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │

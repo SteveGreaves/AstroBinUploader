@@ -153,10 +153,14 @@ row order of the acquisition CSV and of every report table. The Rust
 implementation must sort by the same tuple with the same comparison semantics.
 
 `BTreeMap` gives ordering for free — but only once the key types are clean.
-Note that remediation **A5** must land first: today `fillna("None")` promotes
-`gain` to an object column holding mixed `float` and `str`, and reproducing
-pandas' mixed-type sort fallback in Rust would be miserable. Fixing A5 makes
-this hazard nearly disappear, which is a good reason to sequence it early.
+Remediation **A5** is now fixed and landed clean: on investigation the
+`fillna("None")`-promotes-`gain`-to-object-dtype scenario it describes was
+never actually reachable in the pipeline as it exists (`gain`/`xbinning`/
+`exposure` are unconditionally hardened to non-null numeric types upstream),
+so there's no live mixed-type column to reproduce here. The fix was made
+defensive rather than corrective. Good news for the port: `gain` stays a
+clean numeric type at the group-key stage, so `BTreeMap`'s natural ordering
+is a direct match without any pandas mixed-type sort fallback to replicate.
 
 Also replicate: `groupby(dropna=True)` is the default, so **rows with a null in
 any group key are silently dropped**.
