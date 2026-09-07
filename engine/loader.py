@@ -1,5 +1,5 @@
 """
-Configuration Loader Module - AstroBin Upload Utility v2.0.2
+Configuration Loader Module - AstroBin Upload Utility v2.0.3
 
 Responsible for the ingestion and normalization of the 'config.ini' file. 
 This module ensures that the application's runtime settings are correctly 
@@ -132,10 +132,6 @@ class ConfigLoader:
             'Green': 4643,
             'Blue': 4637,
             'Lum': 2906
-        }
-        config[ConfigSections.SECRET] = {
-            'lightpollution_api_key': 'xxxxxxxxxxxxx',
-            'EMAIL_ADDRESS': 'id@provider.com'
         }
         config[ConfigSections.SITES] = {}
         config.write()

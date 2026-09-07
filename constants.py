@@ -1,5 +1,5 @@
 """
-Centralized Constants Module - AstroBin Upload Utility v2.0.2
+Centralized Constants Module - AstroBin Upload Utility v2.0.3
 
 This module serves as the single source of truth for all literal strings, 
 column names, and configuration keys used throughout the application. 
@@ -64,7 +64,6 @@ class ConfigSections:
     OVERRIDE = 'override'      # User-defined keyword remapping
     FILTERS = 'filters'        # AstroBin filter code database
     SITES = 'sites'            # Local site coordinates database
-    SECRET = 'secret'          # API keys and private data
 
 class InternalColumns:
     """

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstroBin Upload Utility v2.0.2 (Clean Slate)
+AstroBin Upload Utility v2.0.3 (Clean Slate)
 
 This is the primary entry point for the application. It orchestrates the 
 entire ETL (Extract, Transform, Load) workflow using a modern Pipeline 
@@ -90,7 +90,7 @@ def main():
     """
     # Define and parse CLI arguments
     parser = argparse.ArgumentParser(
-        description="AstroBin Upload Utility v2.0.2 - A high-performance ETL pipeline for astronomical metadata.",
+        description="AstroBin Upload Utility v2.0.3 - A high-performance ETL pipeline for astronomical metadata.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Example Usage:

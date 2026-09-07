@@ -1,5 +1,5 @@
 """
-Reporting Module - AstroBin Upload Utility v2.0.2
+Reporting Module - AstroBin Upload Utility v2.0.3
 
 This module is responsible for transforming aggregated session data into a 
 highly detailed, human-readable text report. It mirrors the high-quality 
