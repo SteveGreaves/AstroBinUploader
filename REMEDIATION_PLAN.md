@@ -364,6 +364,72 @@ diff-check `hfr`/`imscale`/`fwhm` across the Sadr fixture before blessing.
 Whatever is decided here becomes the rounding contract the Rust port must match
 — see `RUST_PORT_PLAN.md` hazard 3.
 
+### A13. IMAGETYP normalization erases its own MASTER labels **[proven, fixed]**
+`engine/steps/base.py`, Stage 6 (IMAGETYP Normalization)
+
+Found live, testing against a real user directory (SH2 101) rather than
+either committed fixture — the Sadr fixture's darks happen to already be
+labeled plain `DARK` in the raw data, so it never exercised this path.
+
+The keyword-replacement loop matched each keyword against `df[itype_col]`
+*after* prior iterations had already mutated that same column. Traced step
+by step:
+
+```
+keyword='MASTER DARK' -> 'MASTERDARK'   (before='MASTER DARK')  -- correct
+keyword='MASTERDARK'  -> 'MASTERDARK'   (before='MASTERDARK')   -- harmless no-op
+keyword='DARK'        -> 'DARK'         (before='MASTERDARK')   -- clobbered back down
+```
+
+`'DARK'` (4 chars, sorted last since the loop processes longest keywords
+first) matches `'MASTERDARK'` as a substring of *its own normalized
+output*, so every master calibration frame silently lost its master
+designation — unconditionally, regardless of naming format, not something
+specific to PixInsight's current WBPP output as first suspected.
+
+**Fixed**: match against a frozen snapshot of the original values, and mark
+each row assigned once a keyword claims it, so shorter/later keywords never
+re-examine an already-normalized value (`git log` `a927727`).
+
+**Consequence found while fixing it**: `format_image_type_table` in
+`reports.py` re-filtered its input for an exact match against the
+category's *base* type only. That was silently dropping every row whenever
+a group contained solely its MASTER variant — invisible before only
+because the base.py bug independently collapsed those rows down to the
+base type anyway; two bugs canceling out. Fixed alongside A13 since leaving
+it would have made the base.py fix a visible regression (entire calibration
+sections vanishing for master-only datasets, which is the common case).
+
+**Second consequence, unrelated to either bug above**: the Filter column
+was leaking the literal text `"None"` for calibration frames with no
+FILTER header (XISF masters commonly have none) in a dataset where other
+frames do carry a FILTER column. Two different "no filter" sentinels exist
+— `'No Filter'` (the configured default, injected only when a file has no
+FILTER *column* at all) and `'None'` (`AggregationStep`'s null-safety fill,
+applied per-cell when the column exists but one row's value is missing).
+Only the former was recognized by the blank-out check. Fixed in the same
+commit.
+
+**What this does *not* change**, contrary to the initial hypothesis: a
+clean `git stash`/pop A-B comparison against the SH2 101 fixture showed
+exposure times and frame counts were already correct before this fix, for
+this dataset — `NormalizeHeadersStep`'s Stage 5 master-preference filtering
+already drops raw subs in favour of a same-signature master *before* Stage
+6 runs, independent of this bug. The originally reported symptom ("masters
+report zero exposure") did not reproduce against this repository on either
+`main` or this branch; whatever produced it on the user's machine was a
+different code path, not this one. The one proven, isolated effect was the
+Filter-column leak above.
+
+**Structural risk fixed regardless**: `CalibrationMatcherStep.resolve_count()`
+checks for a `'MASTER'` substring to prefer a master over raw subs when
+both are present as *candidates* for a given light frame. That check was
+permanently unreachable before this fix — no row could ever carry a
+`'MASTER'`-containing label by the time it ran. No live double-counting was
+found in the tested dataset (Stage 5 already prevents the raw/master
+coexistence that would trigger it), but the check is now live rather than
+dead code, and is exactly the mechanism A10/A11 depend on to matter at all.
+
 ---
 
 ## Bucket B — corrections with no output change
@@ -394,12 +460,15 @@ for every one; that is the acceptance test.
 ## Sequencing
 
 ```
-P0   verification substrate            ← blocks everything
+P0   verification substrate            ← blocks everything          [done, a2a0741]
  │
-B8   single version source             ← blocks partial commits (integrity check)
+B8   single version source             ← blocks partial commits      [done, 63aa3a7]
+     (integrity check dropped per user decision, not just centralized)
  │
-A9   determinism                       ← blocks meaningful golden diffs
-A2   source_path in extractor          ← changes fixture schema; regenerate corpus
+A9   determinism                       ← blocks meaningful diffs     [done, 4fc8382]
+A2   source_path in extractor          ← changes fixture schema      [done, 53ffb42]
+A13  IMAGETYP master-label collapse    ← found live on SH2 101,      [done, a927727]
+     (+ its reports.py knock-on)         not in either fixture
  │
 A1 · A3 · A4 · A5 · A6 · A7 · A8 · A12 ← one commit + attributed diff each
  │
@@ -410,10 +479,17 @@ B1–B15 (less B13)                      ← batched; golden diff must be empty
 tag v2.1.0                             ← parity contract for the Rust port
 ```
 
-Rationale for the two blockers: B8 first because `verify_engine_integrity`
-aborts the program on any version mismatch, which makes incremental commits
-unrunnable. A9 next because a golden diff against non-deterministic output
+Rationale for the two blockers: B8 first because the original
+`verify_engine_integrity` aborted the program on any version mismatch, which
+made incremental commits unrunnable — resolved by dropping that check
+entirely rather than just centralizing the version strings, per user
+decision. A9 next because a golden diff against non-deterministic output
 cannot distinguish a fix from noise.
+
+A13 was not in the original plan — found by testing against a second, real
+target directory (SH2 101) rather than relying on the Sadr fixture alone.
+That directory is not part of the committed corpus (kept local-only, per
+user decision) but the finding and fix are real and apply regardless.
 
 ## Estimate
 
