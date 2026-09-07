@@ -37,7 +37,13 @@ def seconds_to_hms(seconds: Union[int, float], logger: logging.Logger, aligned: 
         if aligned:
             return f"{hours:>6} hrs {minutes:>6} mins {secs:>6.2f} secs"
         return f"{hours} hrs {minutes} mins {secs:.2f} secs"
-    except Exception:
+    except (TypeError, ValueError, OverflowError) as e:
+        # 'logger' has been a parameter here, documented as being "for
+        # error handling", since the function's signature was written, but
+        # was never once used -- this fell back to a silent zero with no
+        # trace regardless of what bad input caused it (B3 in
+        # REMEDIATION_PLAN.md).
+        logger.debug(f"seconds_to_hms could not format {seconds!r}: {e}")
         return "0 hrs 0 mins 0.00 secs"
 
 def get_target_details(group: pd.DataFrame, logger: logging.Logger) -> str:

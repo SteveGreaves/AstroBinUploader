@@ -217,7 +217,17 @@ class GeocodeStep:
                     closest = dist.idxmin()
                     df.at[i, InternalColumns.SITE_LAT] = lights.at[closest, InternalColumns.SITE_LAT]
                     df.at[i, InternalColumns.SITE_LONG] = lights.at[closest, InternalColumns.SITE_LONG]
-            except Exception: pass
+            except Exception as e:
+                # Leaves this row's coordinates as whatever they already
+                # were (possibly still missing) rather than crashing the
+                # whole pipeline over one calibration frame's coordinate
+                # alignment -- kept broad since this handles a wide range
+                # of tolerated data oddities, but previously gave no trace
+                # at all when it fired (B3 in REMEDIATION_PLAN.md).
+                logger.debug(
+                    f"Could not align coordinates for row {i} "
+                    f"({row.get(InternalColumns.FILENAME, '<unknown file>')}): {e}"
+                )
         return df
 
     def _find_site_in_db(self, db: pd.DataFrame, lat: float, lon: float, precision: int) -> Optional[pd.Series]:
@@ -247,5 +257,13 @@ class GeocodeStep:
             matches = db[mask]
             if not matches.empty:
                 return matches.iloc[0]
-        except Exception: pass
+        except Exception as e:
+            # Most commonly a malformed [sites] section (missing
+            # latitude/longitude keys) -- falls back to the caller's
+            # default site metadata either way, but previously gave no
+            # trace when the lookup itself failed outright, as opposed to
+            # simply finding no match (B3 in REMEDIATION_PLAN.md).
+            logging.getLogger("AstroBinV2").debug(
+                f"Site DB lookup failed for ({lat}, {lon}): {e}"
+            )
         return None

@@ -43,19 +43,6 @@ def initialise_logging(log_filename: str) -> logging.Logger:
     """
     Initializes a professional logging system with automatic context resolution.
     """
-    import inspect
-
-    class FunctionNameFilter(logging.Filter):
-        def filter(self, record):
-            stack = inspect.stack()
-            for frame_info in stack:
-                if frame_info.filename != __file__ and 'logging' not in frame_info.filename:
-                    record.funcname = frame_info.function
-                    break
-            else:
-                record.funcname = 'unknown'
-            return True
-
     try:
         log_dir = os.path.dirname(log_filename)
         if log_dir and not os.path.exists(log_dir):
@@ -69,12 +56,22 @@ def initialise_logging(log_filename: str) -> logging.Logger:
         new_logger.setLevel(logging.INFO)
 
         handler = logging.FileHandler(log_filename, encoding='utf-8')
+        # %(funcName)s is stdlib logging's own resolution of the immediate
+        # caller (via the stack frame active at record creation), which is
+        # exactly what the previous FunctionNameFilter walked inspect.stack()
+        # by hand to reproduce on every single log record -- every
+        # logger.X() call in this codebase is made directly inside the
+        # function of interest (never through an intermediate wrapper), so
+        # the two report the same name, without the per-record stack walk
+        # (B4 in REMEDIATION_PLAN.md). %(lineno)d was already correct
+        # before this change -- it's captured by Logger.makeRecord() at
+        # record-creation time, before any Filter runs, so it was never
+        # actually affected by the custom filter.
         formatter = logging.Formatter(
-            '%(asctime)s - %(funcname)s - Line: %(lineno)d - %(levelname)s - %(message)s',
+            '%(asctime)s - %(funcName)s - Line: %(lineno)d - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         handler.setFormatter(formatter)
-        handler.addFilter(FunctionNameFilter())
         new_logger.addHandler(handler)
 
         new_logger.info("Logging system initialized successfully.")
@@ -212,13 +209,18 @@ def main():
         logger.error("The application encountered a fatal error and must exit.")
         logger.exception(e)
         
-        # If we have any data at all, dump it for emergency diagnostics
+        # If we have any data at all, dump it for emergency diagnostics.
+        # Kept broad and still non-fatal on purpose -- this runs while the
+        # program is already dying, and must never itself raise -- but now
+        # at least logs what went wrong with the dump attempt, rather than
+        # silently discarding it (B3 in REMEDIATION_PLAN.md).
         try:
             if 'raw_df' in locals() and not raw_df.empty:
                 emergency_csv = os.path.join(output_dir, "emergency_raw_dump.csv")
                 raw_df.to_csv(emergency_csv, index=False)
                 print(f"Emergency data dump saved to: {emergency_csv}")
-        except: pass
+        except Exception as dump_error:
+            logger.debug(f"Emergency data dump also failed: {dump_error}")
 
         print(f"\n[CRITICAL ERROR]: {str(e)}")
         print(f"Detailed diagnostics have been saved to: {log_file}")

@@ -23,6 +23,35 @@ import struct
 import xml.etree.ElementTree as ET
 from constants import FITSKeywords
 
+
+def _init_worker_logging(log_filepath: Optional[str], level: int):
+    """
+    Configure logging inside a spawned worker process.
+
+    On fork-based platforms (Linux, the default here), a worker process
+    inherits a full copy of the parent's already-configured logger --
+    including its handlers -- at fork time, so this is a harmless no-op
+    (the `if not worker_logger.handlers` guard skips re-adding). On
+    spawn-based platforms (macOS default since Python 3.8, Windows always),
+    a worker starts a fresh interpreter with no logging configured at all,
+    so every per-file parse error logged from inside extract_single_file
+    was silently dropped -- not printed, not written to the log file,
+    gone (B5 in REMEDIATION_PLAN.md). This runs once per worker via
+    ProcessPoolExecutor's `initializer`.
+    """
+    if not log_filepath:
+        return
+    worker_logger = logging.getLogger("AstroBinV2")
+    if not worker_logger.handlers:
+        handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(funcName)s - Line: %(lineno)d - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        worker_logger.addHandler(handler)
+        worker_logger.setLevel(level)
+
+
 class HeaderExtractor:
     """
     Orchestrates the discovery and parsing of astronomical metadata.
@@ -71,12 +100,24 @@ class HeaderExtractor:
         total = len(file_paths)
         results: Dict[str, Any] = {}
 
+        # Find the main logger's log file, if any, so worker processes can
+        # be configured to write to the same file (B5 in
+        # REMEDIATION_PLAN.md -- see _init_worker_logging above).
+        log_filepath = None
+        for h in self.logger.handlers:
+            if isinstance(h, logging.FileHandler):
+                log_filepath = h.baseFilename
+                break
+
         # Parallel Execution: Utilize multiple processes for XML/FITS parsing
         # This is significantly faster for XISF files which involve large XML blocks.
         # Completion order under as_completed() is nondeterministic, so results
         # are keyed by their originating path and reassembled in the sorted
         # dispatch order below rather than appended in completion order.
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(
+            initializer=_init_worker_logging,
+            initargs=(log_filepath, self.logger.level)
+        ) as executor:
             futures = {executor.submit(self.extract_single_file, fp): fp for fp in file_paths}
             for i, future in enumerate(as_completed(futures), 1):
                 fp = futures[future]
@@ -246,7 +287,14 @@ class HeaderExtractor:
                 table = hist_root.find(".//table[@id='images']")
                 if table is not None:
                     hdr[FITSKeywords.NUMBER] = int(table.get('rows', 1))
-            except Exception: pass
+            except (ET.ParseError, ValueError, TypeError) as e:
+                # Malformed ProcessingHistory XML or a non-numeric 'rows'
+                # attribute -- fall through to the fallback below rather
+                # than silently leaving NUMBER at 1 with no trace (B3 in
+                # REMEDIATION_PLAN.md).
+                logging.getLogger("AstroBinV2").debug(
+                    f"Could not parse ProcessingHistory NUMBER for {filepath}: {e}"
+                )
         
         # Fallback: If NUMBER is still 1, search FITS comments/history for ImageIntegration count
         if hdr[FITSKeywords.NUMBER] == 1:
@@ -257,7 +305,15 @@ class HeaderExtractor:
                     try:
                         hdr[FITSKeywords.NUMBER] = int(comment.split(':')[-1].strip())
                         break
-                    except Exception: pass
+                    except (ValueError, TypeError) as e:
+                        # Comment text matched but the trailing token
+                        # wasn't a plain integer -- keep NUMBER at its
+                        # current fallback rather than silently discarding
+                        # the mismatch with no trace (B3 in
+                        # REMEDIATION_PLAN.md).
+                        logging.getLogger("AstroBinV2").debug(
+                            f"Could not parse numberOfImages comment for {filepath}: {comment!r} ({e})"
+                        )
             
         return hdr
 
@@ -272,6 +328,15 @@ class HeaderExtractor:
         if isinstance(history, str): history = [history]
         for line in history:
             if 'ImageIntegration.numberOfImages:' in line:
-                try: return int(line.split()[-1])
-                except Exception: pass
+                try:
+                    return int(line.split()[-1])
+                except (ValueError, TypeError) as e:
+                    # Line matched but the trailing token wasn't a plain
+                    # integer -- fall through to the default of 1 rather
+                    # than silently discarding the mismatch with no trace
+                    # (B3 in REMEDIATION_PLAN.md).
+                    logging.getLogger("AstroBinV2").debug(
+                        f"Could not parse numberOfImages HISTORY line for "
+                        f"{hdr.get(FITSKeywords.FILENAME, '<unknown file>')}: {line!r} ({e})"
+                    )
         return 1
