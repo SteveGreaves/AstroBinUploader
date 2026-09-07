@@ -168,7 +168,11 @@ cython_debug/
 config.ini
 *.zip
 tests/
-golden_tests/
 GEMINI.md
 MEMORY.md
-golden_tests/references/
+
+# golden_tests/ IS tracked (see REMEDIATION_PLAN.md P0): it holds the
+# committed fixture corpus and reference outputs that make regression
+# testing possible without machine-specific data. Only its run-scratch
+# output is ignored.
+golden_tests/run_output/
