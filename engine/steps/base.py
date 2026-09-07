@@ -292,12 +292,44 @@ class NormalizeHeadersStep:
         dropped_count = 0
         logger = logging.getLogger("AstroBinV2")
         
-        for _, group in cals.groupby('_group_key'):
+        for group_key, group in cals.groupby('_group_key'):
             is_master_mask = group[itype_col].astype(str).str.upper().str.contains('MASTER', na=False)
             if is_master_mask.any():
-                # KEEP ONLY the first master frame found in this hardware group, drop all raws
-                dropped_count += len(group) - 1
-                final_cals.append(group[is_master_mask].iloc[[0]])
+                # KEEP ONLY one master frame for this hardware group, drop all raws.
+                #
+                # A10 in REMEDIATION_PLAN.md, per user decision: masters
+                # should always be the latest available. There normally
+                # shouldn't be more than one master per (type, gain, egain,
+                # binning, duration/filter) group in the first place -- if
+                # there is, prefer the one with the most recent DATE-OBS
+                # rather than an arbitrary "first found" (which A9 made
+                # deterministic, but deterministic isn't the same as
+                # meaningful: it was really just picking whichever file the
+                # sorted scan happened to reach first).
+                masters = group[is_master_mask]
+                if len(masters) > 1:
+                    parsed_dates = pd.to_datetime(masters[InternalColumns.DATE_OBS], errors='coerce')
+                    if parsed_dates.notna().any():
+                        latest_idx = parsed_dates.idxmax()
+                        chosen = masters.loc[[latest_idx]]
+                        logger.debug(
+                            f"Master Preference: {len(masters)} masters found for group "
+                            f"{group_key}; kept the most recent (DATE-OBS={parsed_dates.loc[latest_idx]})."
+                        )
+                    else:
+                        # No usable DATE-OBS on any candidate -- fall back
+                        # to the first found under the deterministic scan
+                        # order (A9), rather than erroring.
+                        chosen = masters.iloc[[0]]
+                        logger.debug(
+                            f"Master Preference: {len(masters)} masters found for group "
+                            f"{group_key} but none had a usable DATE-OBS; kept the first "
+                            f"found under scan order."
+                        )
+                else:
+                    chosen = masters
+                dropped_count += len(group) - len(chosen)
+                final_cals.append(chosen)
             else:
                 # Keep all raw frames if no master exists
                 final_cals.append(group)
