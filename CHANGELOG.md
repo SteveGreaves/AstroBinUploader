@@ -1,5 +1,62 @@
 # Changelog
 
+## [2.1.0] - 2026-09-07
+Full remediation of v2.0.3 per `REMEDIATION_PLAN.md`. 14 output-affecting
+defects (Bucket A) and 15 hygiene items (Bucket B) fixed, each with its own
+commit and verification note. A golden regression harness now guards behaviour.
+
+### Fixed — output-affecting (Bucket A)
+- **A1 — Deduplication regex**: the WBPP post-fix pattern was unanchored and
+  matched a bare `_c` anywhere in a name (e.g. inside `_calibrated_`), then
+  swallowed everything to the extension — silently merging unrelated captures
+  into one row. Replaced with an anchored pattern.
+- **A2 — Deduplication scope**: keys now include the source directory, so
+  identically-named frames from different sessions (`Light_0001.fits`) no
+  longer collapse together.
+- **A3 — GPS clustering**: an already-clustered point could be stolen by a
+  later seed, stripping the first cluster to a single un-averaged point.
+  Clustering is now a stable greedy single-linkage pass.
+- **A4 — GPS distance**: replaced flat degree-space Euclidean distance (which
+  silently shrank the effective radius with latitude) with a haversine metric
+  in metres.
+- **A5 — Group keys**: hardened against numeric grouping keys being promoted
+  to object dtype (which printed `100.0` instead of `100` in the acquisition
+  CSV).
+- **A6 — Hardware overrides**: a typo'd `[override]` target and list-value
+  corruption made the section partly dead.
+- **A7 — FITS HDU selection**: metadata is now read from the HDU that carries
+  it rather than always HDU 0.
+- **A8 — Header normalisation order**: column case is normalised before
+  defaults are injected, not after.
+- **A9 — Determinism**: file discovery and sorting are now fully deterministic,
+  so every `first()` / `iloc[0]` resolution is stable between runs.
+- **A10 / A11 — Calibration semantics**: master-preference ("latest wins") and
+  flat-dark matching (binning + master preference) made consistent with the
+  other calibration classes.
+- **A12 — Optical metrics**: `OpticalParameterStep` vectorised without changing
+  rounding — builtin round-half-to-even is preserved via an explicit helper
+  rather than switching to pandas/numpy rounding.
+- **A13 — IMAGETYP normalisation**: stopped a second normalisation pass from
+  matching its own output and erasing `MASTER` designations.
+- **A14 — Calibration report**: darks and bias are filter-independent and are
+  no longer grouped or labelled by filter in the report table.
+
+### Changed / hardened (Bucket B)
+- Single source of truth for the version (`_version.py`); the startup version
+  handshake and 14 duplicated `__version__` strings were removed.
+- Logging robustness: `funcName` in the format, worker logging fixed for
+  spawn-based platforms, several silent `except` clauses given debug traces.
+- Dead code removed (unused imports, orphaned `pipeline.py`, unused `[secret]`
+  config section); deprecated `groupby(axis=1)` replaced with a dtype-safe
+  coalesce; input paths validated; magic numbers named; `requirements.txt`
+  trimmed to real dependencies.
+
+### Testing
+- New `golden_tests/run_golden.py` — replays committed fixtures through the
+  `--test` path and byte-compares against blessed references. Ships with two
+  fixtures (`sadr`, `sh2101_calib` — 1693 real frames exercising calibration
+  matching end to end). `pytest` is now wired into the project venv.
+
 ## [2.0.3] - 2026-02-12
 ### Fixed
 - **Optical Metric Type Safety**: Resolved a fatal `TypeError` when processing XISF files by adding `HFR`, `FWHM`, and `IMSCALE` to the mandatory type-hardening list. This ensures these values are always treated as floats, preventing crashes during assignment in Pandas 3.x.

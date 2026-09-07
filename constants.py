@@ -1,5 +1,5 @@
 """
-Centralized Constants Module - AstroBin Upload Utility v2.0.3
+Centralized Constants Module - AstroBin Upload Utility v2.1.0
 
 This module serves as the single source of truth for all literal strings, 
 column names, and configuration keys used throughout the application. 

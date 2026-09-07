@@ -1,5 +1,5 @@
 """
-File Deduplication Module - AstroBin Upload Utility v2.0.3
+File Deduplication Module - AstroBin Upload Utility v2.1.0
 
 This module addresses the problem of 'metadata duplication' caused by image 
 preprocessing software (e.g., PixInsight WeightedBatchPreprocessing - WBPP). 

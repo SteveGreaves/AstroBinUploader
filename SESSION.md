@@ -70,9 +70,16 @@ Summary by phase — see `REMEDIATION_PLAN.md` for full detail on every item:
   answer captured before this handoff.
 
 **Golden harness status**: `golden_tests/run_golden.py` — 2/2 fixtures pass
-(`sadr`, `sh2101_calib`). `pytest tests/` — 2/2 pass. `pyflakes` — clean
-across the whole codebase (verified as part of this session, not previously
-run). All confirmed passing as of the last commit.
+(`sadr`, `sh2101_calib`). `pytest tests/` — 2/2 pass. `pyflakes` — clean.
+All confirmed passing as of the last commit.
+
+**Version + docs (2026-09-07 follow-up)**: `_version.py` bumped `2.0.3 -> 2.1.0`
+(and every module docstring header, the argparse description, `README.md`,
+`PROGRAM_OVERVIEW.md`). `CHANGELOG.md` and `ReleaseNotes.md` gained full
+`2.1.0` entries. Version does not appear in pipeline output, so the golden
+references are unaffected (re-verified green after the bump). `RUST_PORT_PLAN.md`
+hazards re-validated against the landed fixes (hazards 3/8 resolved, 2 expanded,
+10-12 added for A1/A2, A3/A4, A13/A14). All on PR #12.
 
 ## 🚧 Current Blockers & Technical Debt
 
