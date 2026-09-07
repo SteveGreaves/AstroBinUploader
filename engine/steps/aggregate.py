@@ -1,5 +1,5 @@
 """
-Vectorized Aggregation Engine - AstroBin Upload Utility v2.1.0
+Vectorized Aggregation Engine - AstroBin Upload Utility v2.1.1
 
 This module implements the final transformation stage of the pipeline: 
 Summarizing hundreds or thousands of individual frame headers into a 

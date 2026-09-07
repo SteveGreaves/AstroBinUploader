@@ -1,5 +1,5 @@
 """
-Optical Parameter Calculation Module - AstroBin Upload Utility v2.1.0
+Optical Parameter Calculation Module - AstroBin Upload Utility v2.1.1
 
 This module calculates critical optical metrics for Light frames that are 
 required by AstroBin's technical cards.

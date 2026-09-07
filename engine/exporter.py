@@ -1,5 +1,5 @@
 """
-Data Exporter Module - AstroBin Upload Utility v2.1.0
+Data Exporter Module - AstroBin Upload Utility v2.1.1
 
 Responsible for generating the final user-facing artifacts from the 
 processed session state. This module handles the conversion of internal 

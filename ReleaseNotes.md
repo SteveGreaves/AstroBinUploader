@@ -1,5 +1,27 @@
 # Release Notes - AstroBin Upload Utility
 
+## [v2.1.1] - 2026-09-07
+### GitHub Issue Follow-up
+
+A short release reconciling the codebase with the open issue tracker after v2.1.0.
+
+- **#5 — equipment name overrides**: a new optional `[equipmentoverrides]`
+  section lets you force the displayed value for `INSTRUME`, `TELESCOP`,
+  `FOCNAME`, `FWHEEL` or `ROTNAME` (or any field). Set `FOCNAME = ZWO EAF` and
+  every frame reports that, regardless of what the header actually says.
+- **#6 — ASCOM Observing Conditions**: `AOCSKYQU` and `AOCAMBT` now feed SQM and
+  focuser temperature without any config change on a freshly generated
+  `config.ini`.
+- **#3 — rotator**: the auto-generated config no longer carries the obsolete
+  `ROTATOR` key; the rotator *name* comes from `ROTNAME`, the angle from
+  `ROTANTANG`.
+
+Issues #11 and #4 were already resolved by v2.1.0 (deduplication regex anchor;
+`--config` flag). #9 and #10 are believed resolved by v2.1.0's master-frame
+handling and await a re-test against the reporters' data.
+
+---
+
 ## [v2.1.0] - 2026-09-07
 ### Remediation Release — Correctness, Determinism & a Regression Harness
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.1] - 2026-09-07
+Follow-up to v2.1.0, closing the loop with the GitHub issue tracker.
+
+### Added
+- **#5** — optional `[equipmentoverrides]` config section. Forces a literal
+  display value into a named column (`instrume` / `telescop` / `focname` /
+  `fwheel` / `rotname`, or any column) for every frame, applied right after
+  default injection. For headers that carry `EAF` rather than `ZWO EAF`.
+
+### Changed
+- **#6** — the generated default `[override]` section now maps the ASCOM
+  Observing-Conditions keywords out of the box: `SQM = AOCSKYQ, AOCSKYQU` and
+  `FOCTEMP = AOCAMBT`, plus `FOCNAME = FOCUSER` and `SWCREATE = CREATOR`. The
+  `[override]` plumbing already supported this — only the generated template
+  lagged.
+
+### Fixed
+- **#3** — the generated default `config.ini` seeded a stale `ROTATOR` key; the
+  rotator name has keyed on `ROTNAME` (angle on `ROTANTANG`) since the pipeline
+  rewrite. Generator now matches `config.ini.example`.
+
 ## [2.1.0] - 2026-09-07
 Full remediation of v2.0.3 per `REMEDIATION_PLAN.md`. 14 output-affecting
 defects (Bucket A) and 15 hygiene items (Bucket B) fixed, each with its own
@@ -50,17 +71,6 @@ commit and verification note. A golden regression harness now guards behaviour.
   config section); deprecated `groupby(axis=1)` replaced with a dtype-safe
   coalesce; input paths validated; magic numbers named; `requirements.txt`
   trimmed to real dependencies.
-
-### Config (GitHub issue follow-up)
-- **#3** — the generated default `config.ini` now seeds `ROTNAME` / `ROTANTANG`
-  instead of the stale `ROTATOR` key.
-- **#6** — the generated default `[override]` section now includes
-  `SQM = AOCSKYQ, AOCSKYQU` and `FOCTEMP = AOCAMBT` (ASCOM Observing-Conditions
-  keywords), plus `FOCNAME = FOCUSER` and `SWCREATE = CREATOR`.
-- **#5** — new optional `[equipmentoverrides]` section: forces a literal
-  display value into `instrume` / `telescop` / `focname` / `fwheel` / `rotname`
-  (or any column) for every frame, applied after default injection. Useful
-  when a header carries `EAF` rather than `ZWO EAF`.
 
 ### Testing
 - New `golden_tests/run_golden.py` — replays committed fixtures through the
