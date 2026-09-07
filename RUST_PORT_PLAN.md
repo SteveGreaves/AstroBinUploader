@@ -470,11 +470,42 @@ to `float64`, and `100` becomes `100.0` in the output AstroBin consumes. This is
 the same failure surface as A5, reached through the reader rather than through
 `fillna`.
 
+Measured rules (pandas 2.2.3, default arguments) — the first draft of this
+hazard had only the first of these:
+
+| Input column | dtype | Note |
+|---|---|---|
+| `100`, `100` | `int64` | |
+| `100`, ``, `100` | `float64` | one blank demotes the whole column |
+| `100`, `None`, `100` | `float64` | **`None` is an NA sentinel** |
+| `None`, `None` | `float64` (all NaN) | never `object` |
+| `abc`, `None` | `object` | the `None` cell is NaN, not `"None"` |
+| `100`, `1.5` | `float64` | |
+| `True`, `False` | `bool` | |
+| `007`, `008` | `int64` → `7`, `8` | leading zeros are not preserved |
+| `99999999999999999999` | `object` | i64 overflow does **not** fall back to float |
+
+The `None` row matters more than it looks: `[defaults]` writes a literal
+`None` for `INSTRUME` / `TELESCOP` / `FOCNAME` / `FWHEEL` / `ROTNAME`, so any
+of those round-tripping through a debug CSV comes back as **null, not the
+string** `"None"`. The full sentinel set is pandas'
+`STR_NA_VALUES` — `''`, `'#N/A'`, `'#N/A N/A'`, `'#NA'`, `'-1.#IND'`,
+`'-1.#QNAN'`, `'-NaN'`, `'-nan'`, `'1.#IND'`, `'1.#QNAN'`, `'<NA>'`, `'N/A'`,
+`'NA'`, `'NULL'`, `'NaN'`, `'None'`, `'n/a'`, `'nan'`, `'null'` — matched
+exactly and case-sensitively.
+
+Also note `skip_blank_lines=True`: a wholly empty line is dropped, not read as
+a row of missing values.
+
 So the Rust CSV reader cannot be "parse into `String` and coerce later". It must
-run pandas' inference rules per column up front — all-integer-and-no-blanks ⇒
-integer; otherwise numeric-parseable ⇒ float; otherwise string; empty ⇒ null —
-and carry that decision as the column's type for the rest of the run. Float
-formatting must round-trip (`repr`-shortest), not fixed precision.
+run these rules per column up front and carry the decision as the column's type
+for the rest of the run. Float formatting must round-trip (`repr`-shortest),
+not fixed precision.
+
+**Status: implemented and verified.** `rust/src/table.rs` reproduces every row
+above; `golden_tests/check_rust_parity.py` diffs the Rust dtype inference
+against live pandas over both fixtures and currently passes on all 64/63
+columns.
 
 ---
 
@@ -486,7 +517,7 @@ covers.
 | Phase | Scope | Why here |
 |---|---|---|
 | **0** | Freeze the contract — **done**: `v2.1.1` tagged and on `main`, goldens regenerated. | Nothing testable without it |
-| **1** | Cargo scaffold, `clap` CLI, config parser (incl. `[equipmentoverrides]`, v2.1.1), `--test` CSV ingest **only** — with pandas-equivalent dtype inference (hazard 14) | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
+| **1** | ~~Cargo scaffold, `clap` CLI, config parser, `--test` CSV ingest with pandas-equivalent dtype inference~~ — **done**, verified against configobj and pandas by `golden_tests/check_rust_parity.py` | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
 | **2** | The six pipeline steps as pure functions over `Vec<Frame>`, incl. `NormalizeHeadersStep` Stage 3b (equipment value overrides, v2.1.1) | The bulk of the logic; fully exercised by Phase 1's CSV path |
 | **3** | Exporter + `reports.py` — the byte-parity grind | Hazard 1 lives here |
 | **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise. **Prerequisite:** `REMEDIATION_PLAN.md` P0 item 3 — hand-built FITS/XISF fixtures under `golden_tests/fixtures/binary/` — was never done and that directory does not exist. Build it as the first task of this phase, including a tile-compressed `.fits.fz` case. |

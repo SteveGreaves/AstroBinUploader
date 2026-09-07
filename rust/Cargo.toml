@@ -1,0 +1,16 @@
+[package]
+name = "astrobin-upload"
+version = "2.1.1"
+edition = "2021"
+rust-version = "1.74"
+description = "Astrophotography metadata ETL for AstroBin bulk uploads — Rust port of AstroBinUpload.py"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
