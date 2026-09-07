@@ -1,0 +1,431 @@
+# Remediation Plan — AstroBinUpload v2.0.3 → v2.1.0
+
+Audit performed 2026-09-07 against the working tree at commit `394e7d0`.
+Supersedes `future_work.md`, which remains accurate but incomplete: it lists
+hygiene items and misses every one of the output-corrupting defects in Bucket A
+below.
+
+Findings marked **[proven]** were reproduced empirically in this session, not
+inferred from reading.
+
+---
+
+## P0 — Build the verification substrate first
+
+Nothing else in this plan is safe to start until there is a machine-independent
+way to prove a change did or did not alter output. Right now there isn't one.
+
+### The problem
+
+`.gitignore:168–174` excludes `config.ini`, `tests/`, `golden_tests/` **and**
+`golden_tests/references/`. The six Golden Tests in `GEMINI.md` reference
+absolute paths on one workstation. The entire acceptance criterion for this
+project is therefore untracked and unreproducible.
+
+Current state of that data on this machine:
+
+| Test | Data | Status |
+|---|---|---|
+| 1 (Michael, CSV) | `~/Downloads/Jason Astrobin Data` | dir present, **0 frames**, CSV missing |
+| 2 (31st May) | `~/Desktop/Pixinsight/LBN 548` | **missing** |
+| 3 (13th June, standard sanity check) | `~/Desktop/Pixinsight/LBN 548` | **missing** (calibration dir present, 812 frames) |
+| 4 (Mosaic) | NGC 6997 Mosaic | not checked, depends on missing LBN 548 calib pairing |
+| 5 (Alpha, CSV) | `~/Downloads/Jason Astrobin Data` | dir present, **0 frames**, CSV missing |
+| 6 (Sadr) | `Preselected/Sadr Region` | **present, 221 frames** |
+
+Five of the six Golden Tests cannot currently be run at all.
+
+### What was verified **[proven]**
+
+TEST 6 was executed against `v2.0.3`. Both artefacts are **byte-identical** to
+`golden_tests/references/sadr_*` after normalising the `Generated <timestamp>`
+line. So the committed references are current for the one scenario that is
+still runnable — the baseline is trustworthy, just nearly inaccessible.
+
+More importantly, the `--test` replay path was validated end to end:
+
+```
+scan from disk           → Sadr_Region_session_summary.txt
+--debug                  → debug_step_00_RawHeaders.csv   (140 KB, 17 KB gzipped)
+--test debug_step_00.csv → Sadr_Region_session_summary.txt
+```
+
+The replayed output is byte-identical to the disk scan. **`--test` is a faithful
+substitute for the filesystem.** That makes a committed fixture corpus possible.
+
+### Actions
+
+1. **Un-ignore the reference outputs.** Remove `golden_tests/` and
+   `golden_tests/references/` from `.gitignore`. Keep `tests/`, `config.ini`,
+   `GEMINI.md` and `MEMORY.md` ignored, per the standing rule in `GEMINI.md`.
+2. **Capture a fixture corpus.** For each scenario, run with `--debug` and commit
+   the resulting `debug_step_00_RawHeaders.csv` as
+   `golden_tests/fixtures/<name>_raw.csv`. At ~17 KB gzipped each these are
+   comfortably committable and contain only header metadata, no pixel data.
+
+   **Be clear about what this can deliver today: Sadr only.** Fixtures cannot be
+   captured for TESTs 1–5 because their source data is absent from this machine
+   (table above) — the capture requires the original frames. Until you restore
+   that data the corpus is a single scenario, which exercises no calibration
+   matching at all (Sadr has zero darks/flats/bias) and therefore leaves A1, A2,
+   A10 and A11 without regression cover. Treat restoring TEST 2/3 data as the
+   highest-value unblocking action in this entire plan.
+3. **Add synthetic binary fixtures** for the paths CSV replay cannot exercise:
+   the XISF XML parser, the FITS HDU selection, and the filename GAIN/FILTER
+   fallbacks. Hand-built FITS/XISF files with valid headers and a 1×1 pixel
+   array are a few KB each. Commit under `golden_tests/fixtures/binary/`.
+4. **Install pytest into the venv** — `/mnt/raid0/Code/venvs/.astrovenv` does
+   not have it, so `tests/` has never actually run.
+5. **Fix the existing test.** `tests/test_imports.py:47` asserts `'2.0.2'`
+   against modules declaring `'2.0.3'`; the suite fails on contact. Replace the
+   hardcoded literal with an import from the single version source (item B8).
+6. **Write `golden_tests/run_golden.py`** — replays every fixture through
+   `--test`, diffs against `references/`, normalising only the `Generated` line.
+   One command, no external data, machine-independent.
+
+Only once step 6 goes green on the current code does the rest of this plan begin.
+
+---
+
+## Bucket A — defects that change output
+
+These are the real bugs. Each **must** get its own commit with its own attributed
+golden diff: every changed byte traced to a named fix, anything else is a
+regression. Do not batch these.
+
+### A1. Deduplication regex silently destroys exposure data **[proven]**
+`engine/steps/deduplicate.py:56`
+
+```python
+df['base_filename'] = df[FILENAME].str.extract(
+    r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)', flags=re.IGNORECASE)[0]
+```
+
+`.+?` is non-greedy and `str.extract` uses `re.search` (unanchored), so the
+engine finds the *shortest* prefix that lets the rest match. Any `_c` anywhere
+in the filename truncates the key:
+
+| Filename | Extracted base |
+|---|---|
+| `M31_Light_001.fits` | `M31_Light_001` ✅ |
+| `M31_Light_001_c.xisf` | `M31_Light_001` ✅ |
+| `NGC7000_Light_005.fits` | `NGC7000_Light_005` ✅ |
+| `NGC7000_calibrated_Light_005.fits` | **`NGC7000`** ❌ |
+
+Every frame of a target whose filename contains `_c` — `_calibrated`,
+`_cropped`, a filter named `_clear`, a target like `IC_1396` written
+`ic_cocoon_...` — collapses into a **single** row. The frames are discarded
+silently, total integration time is under-reported, and nothing is logged
+because `DeduplicateStep` only logs the aggregate count removed.
+
+**Fix.** Anchor the pattern and require the postfix to sit immediately before
+the extension, with an explicit alternation of known WBPP postfixes
+(`_c`, `_cc`, `_r`, `_rn`, `_d`, `_b`, `_s` and their combinations) rather than
+`_c.*`. Move the pattern to a `RegexPatterns` class in `constants.py` (see B-items).
+Add a DEBUG log line naming each file dropped and the survivor it lost to.
+
+### A2. Deduplication key ignores the directory
+`engine/steps/deduplicate.py:71`, caused by `engine/extractor.py:139,166`
+
+The extractor stores only `os.path.basename(filepath)`; the full path is thrown
+away at read time. Dedup then groups on that basename alone. Two sessions that
+each contain `Light_0001.fits` — the default naming of several capture packages,
+and the norm when you pass two directories on the command line — collapse to one
+frame.
+
+This is the single most likely cause of an under-count in ordinary use, and it
+compounds A1.
+
+**Fix.** Add a `source_path` column carrying the absolute path. Key dedup on
+`(dirname, base_filename)`.
+
+**Backwards compatibility — do not skip this.** Adding a required column breaks
+replay of any `emergency_raw_dump.csv` or `debug_step_00_RawHeaders.csv` written
+by an earlier version. `PROGRAM_OVERVIEW.md` sells that exact flow as the crash
+recovery mechanism ("preserving scanned metadata for immediate recovery using
+the `--test` flag"), so a hard requirement here is a user-facing regression, not
+merely a fixture chore. `extract_from_csv` must detect an absent `source_path`,
+fall back to filename-only keying, and log a warning naming the limitation. The
+P0 fixture corpus must also be regenerated after this commit — sequence it early.
+
+### A3. GPS clustering reassigns points away from their cluster **[proven]**
+`engine/steps/geocode.py:68–85`
+
+```python
+unique_coords.loc[dist < dist_threshold, 'site_cluster'] = cluster_id
+```
+
+The mask is unconditional — it overwrites points **already assigned** to an
+earlier cluster. Three colinear readings 0.0008° apart (well inside the 0.001°
+threshold, so morally one site):
+
+```
+   sitelat  sitelong  site_cluster
+0  52.0000       0.0             0
+1  52.0008       0.0             1     ← stolen from cluster 0
+2  52.0016       0.0             1
+```
+
+Cluster 0 is stripped of its only other member, so its "centroid" is a single
+un-averaged reading — defeating the entire stated purpose of the step. One
+imaging site becomes two, and the report emits two site blocks.
+
+Compounding it: the closing log line reports `cluster_id`, which counts *seeds*,
+not surviving clusters, so the count shown to the user can exceed reality.
+
+**Fix.** Restrict the assignment to `site_cluster == -1`, which yields a
+deterministic greedy clustering; or replace the whole loop with proper
+single-linkage agglomeration, which is what the docstring actually describes.
+Report `nunique()`, not the seed counter.
+
+### A4. Euclidean distance on degrees
+`engine/steps/geocode.py:65,79`
+
+`np.sqrt(dlat² + dlon²)` treats a degree of longitude as equal to a degree of
+latitude. At the site in the reference data (52.25°N) 0.001° of longitude is
+~68 m, not the ~110 m the comment claims; at 60°N it is ~56 m. The cluster
+radius silently narrows as you move north, and the same code is used for the
+calibration-frame coordinate alignment in `_align_coordinates`.
+
+**Fix.** Use `geopy.distance.distance` — already a dependency — and express the
+threshold in metres as a named constant.
+
+### A5. `fillna("None")` corrupts numeric group keys **[proven]**
+`engine/steps/aggregate.py:150–154`
+
+```python
+for col in agg_cols:
+    ...
+    df[col] = df[col].fillna("None")
+```
+
+`agg_cols` includes `gain`, `exposure` and `xbinning`. Filling a numeric column
+with a *string* promotes it to `object` dtype:
+
+```
+dtype after fillna: object
+    gain filter  n
+0    0.0     Ha  4      ← was int64 100 → now float in an object column
+1  100.0     Ha  3
+2   None     Ha  3
+```
+
+So as soon as a single NaN appears anywhere in `gain`, the acquisition CSV
+writes `100.0` where it previously wrote `100`. AstroBin's importer expects an
+integer. The output format is therefore **data-dependent**: the reference CSVs
+show `gain,100` only because those datasets happen to have no nulls.
+
+It also makes the group-key sort order type-dependent, which matters enormously
+for the Rust port (see `RUST_PORT_PLAN.md`, hazard 2).
+
+**Fix.** Fill numeric keys with a numeric sentinel and restore the original
+dtype; reserve `"None"` for genuine string keys (`site`, `filter`, `object`).
+
+### A6. The `SWCREATOR` override is dead
+`config.ini.example:34`, `constants.py:104`
+
+`[override] SWCREATOR = CREATOR` writes a column named `swcreator`. Every
+consumer reads `InternalColumns.SWCREATE == 'swcreate'`. The capture-software
+override has never worked; users editing it see no effect and no warning.
+
+**Fix.** Correct the shipped key to `SWCREATE`. More importantly, validate every
+`[override]` target against `InternalColumns` at config-load time and log a
+warning for unknown targets — this class of silent typo will otherwise recur.
+
+### A7. Only HDU 0 is read, and repeated cards are collapsed
+`engine/extractor.py:137`
+
+```python
+hdr = dict(hdul[0].header)
+```
+
+Two problems. Files whose primary HDU is empty — Rice-compressed `.fits.fz`,
+some multi-extension writers — yield an essentially blank header, and the frame
+is dropped with no diagnostic. And `dict()` on a FITS header collapses repeated
+cards, so the multi-line `HISTORY` block that `_get_fit_number` parses for
+`ImageIntegration.numberOfImages` is reduced to one entry — master-frame
+sub-exposure counts can silently fall back to `1`.
+
+**Fix.** Select the first HDU carrying a non-trivial header. Read `HISTORY` and
+`COMMENT` through the header accessor, which preserves all cards, before
+flattening the rest to a dict.
+
+### A8. Defaults are injected before case normalisation
+`engine/steps/base.py:78–99`
+
+Stage 2 injects `[defaults]` under uppercase keys; Stage 3 lowercases all
+columns; duplicates are then coalesced with `groupby(level=0, axis=1).first()`.
+`first()` picks by column position, so whether a real header value or an
+injected constant survives depends on column ordering — which is itself
+non-deterministic (A10). A frame carrying a genuine `exposure` can be
+overwritten by the config default.
+
+**Fix.** Reorder: normalise case first, then inject a default only where the
+column is genuinely absent. This also removes the need for the deprecated
+`axis=1` groupby (B2).
+
+### A9. Row order is non-deterministic — `first()` aggregations are unstable
+`engine/extractor.py:71–77`, `engine/steps/aggregate.py:50`
+
+`as_completed(futures)` yields futures in **completion** order, so `raw_df` row
+order varies between runs on identical input. `df.sort_values(DATE_OBS)` then
+uses pandas' default `kind='quicksort'`, which is **not stable**, so frames
+sharing a timestamp are ordered arbitrarily.
+
+Everything downstream that resolves a tie by position inherits this: the dedup
+`.iloc[0]` survivor pick, `agg('first')` for `instrume`/`telescop`/`focallen`/
+`filename`, the `iloc[0]` reads throughout `reports.py`, and the A8 column
+coalesce. TEST 6 reproduces only because those columns happen to be constant
+within every group.
+
+This is a prerequisite for the Rust port: byte-parity against a target that
+isn't deterministic is not a well-defined goal.
+
+**Fix.** Sort `file_paths` before dispatch and sort the assembled DataFrame by
+`source_path` after collection; use `kind='mergesort'` (stable) for every
+`sort_values`.
+
+### A10. Master preference discards legitimate masters — **needs your decision**
+`engine/steps/base.py:257`, `engine/steps/calibration.py:157`
+
+Both sites do `candidates[is_master_mask].iloc[[0]]` — keep exactly one master
+per hardware group. If you legitimately hold two master darks at the same
+gain/binning/duration from different dates, one is dropped along with its
+`NUMBER` sub-exposure count.
+
+The comment says this prevents "double-counting between multiple identified
+master versions of the same data", which is right for a re-integration of the
+same subs and wrong for two genuinely separate master sets.
+
+I have not chosen for you. Options: (a) keep current behaviour, documented;
+(b) deduplicate on content identity (`NUMBER` + date range) and sum the rest;
+(c) sum unconditionally. Tell me which and I will implement it.
+
+### A11. Flat-dark matching skips binning *and* master preference
+`engine/steps/calibration.py:176–182`
+
+Darks, bias and flats are all resolved through `resolve_count()` — which applies
+master preference — and all constrain on `BINNING`. Flat-darks do neither:
+
+```python
+df_candidates = cals[
+    cals[IMAGE_TYPE].str.upper().str.contains('DARKFLAT', na=False) & \
+    (cals[FILTER_NAME].str.lower() == str(row[FILTER_NAME]).lower()) & \
+    (cals[GAIN_MATCH] == row[GAIN_MATCH])          # ← no BINNING term
+]
+fd_count = int(df_candidates[NUMBER].sum())        # ← no master preference
+```
+
+Two consequences. A `MASTERDARKFLAT` and the raws it was built from, both
+present, are **summed** rather than the master preferred — double-counting the
+`flatDarks` column written to the acquisition CSV. And flat-darks shot at a
+different binning match anyway.
+
+The in-code comment reads "DarkFlats usually don't have Masters in the same way,
+but applying safe logic", which is what makes this easy to skim past — the logic
+is not in fact the same as the other three.
+
+**Fix.** Route flat-darks through `resolve_count()` and add the `BINNING`
+constraint, making all four calibration classes consistent. This is the same
+decision surface as A10 — resolve them together.
+
+### A12. Vectorising `OpticalParameterStep` changes rounding **[proven]**
+
+Filed here rather than in Bucket B, where it superficially belongs, because the
+rewrite is **not** value-preserving and cannot be held to an empty golden diff.
+
+`optical.py:80` currently uses Python's builtin `round(x, 2)`, which is
+decimal-correct half-to-even. The natural vectorised replacement is pandas
+`.round(2)`, which is numpy's multiply–`rint`–divide on the binary double. They
+disagree, and the disagreement survives `%.2f` formatting into the report:
+
+```
+   value   py round()  pd .round()
+   2.675         2.67         2.68    ← report prints 2.67 vs 2.68
+   2.665         2.67         2.66
+   1.115         1.11         1.12
+   0.005         0.01         0.00
+   3.345         3.35         3.34
+```
+
+5 of 10 tested boundary values differ; all 5 are visible in the rendered report.
+`hfr`, `imscale` and `fwhm` all flow through this path, and `meanFwhm` is a
+column of the acquisition CSV.
+
+Two further traps in the same rewrite: HFR extraction moving from per-row
+`re.search` (with its `> 0` guard and default fallback) to `.str.extract` +
+`fillna` changes the null path; and `float(...)` inside `try/except` becoming
+`pd.to_numeric(errors='coerce')` means the `flen > 0` guard must now also handle
+NaN, which `NaN > 0` silently answers `False`.
+
+**Fix.** Vectorise, but route rounding through an explicit helper that
+reproduces builtin `round` semantics rather than calling `.round()`. Then
+diff-check `hfr`/`imscale`/`fwhm` across the Sadr fixture before blessing.
+Whatever is decided here becomes the rounding contract the Rust port must match
+— see `RUST_PORT_PLAN.md` hazard 3.
+
+---
+
+## Bucket B — corrections with no output change
+
+Batch these into a small number of commits. The golden diff must be **empty**
+for every one; that is the acceptance test.
+
+| # | Item | Location |
+|---|---|---|
+| B1 | Fake progress loop — `for i in range(1, total+1): print(...)` iterates doing nothing but I/O | `steps/aggregate.py:107–111` |
+| B2 | `groupby(level=0, axis=1)` — FutureWarning on pandas 2.2, **removed** in pandas 3 | `steps/base.py:96` |
+| B3 | Silent `except: pass` / `except Exception: pass` — add specific types and a `logger.debug` | `AstroBinUpload.py:278`; `extractor.py:212,223,239`; `geocode.py:175,205`; `reports.py:44` |
+| B4 | `inspect.stack()` runs on **every log record** — walks and reads source for every frame; also `%(lineno)d` reports the logging call site, not the resolved frame. Replace with `%(funcName)s` | `AstroBinUpload.py:100–131` |
+| B5 | Worker logging is fork-only: `getLogger("AstroBinV2")` in a spawned process has no handlers, so all per-file parse errors vanish on macOS/Windows | `extractor.py:110` |
+| B6 | Dead code — unused `Nominatim` import; `[secret]` plumbed through `AppConfig` but never read (the light-pollution API is documented, never implemented); `pipeline.py` is an empty version-handshake stub; unused `Path`, `numpy`, `Tuple`, `ConfigSections` imports | `geocode.py:20`; `loader.py:75`; `pipeline.py`; various |
+| B7 | `requirements.txt` is a raw `pip freeze` — matplotlib, bs4, jupyter, ipython, requests, PyYAML, debugpy are not used. Replace with real deps (`astropy`, `pandas`, `numpy`, `configobj`, `geopy`) plus a separate lock file | `requirements.txt` |
+| B8 | `__version__` duplicated across 14 files; `verify_engine_integrity` trips on any partial edit. Collapse to one `_version.py` imported everywhere | all modules |
+| B9 | Test suite asserts `'2.0.2'` vs actual `'2.0.3'` → fails; pytest not installed in the venv | `tests/test_imports.py:47` |
+| B10 | No validation that input paths exist or are readable before the pipeline runs | `AstroBinUpload.py:188` |
+| B11 | Magic numbers → named constants with provenance comments: 5 h session gap, 0.001° cluster radius, 0.0001 EGAIN tolerance, 206.265 arcsec conversion, `FWHM = HFR × 2` | `aggregate.py:57`, `geocode.py:65`, `calibration.py:39`, `optical.py:70,77` |
+| B12 | Exporter hardcodes `'imagetyp'` instead of the constant, and `acq_source[list(mapping.keys())]` raises a bare `KeyError` if any column is absent | `exporter.py:60,96` |
+| ~~B13~~ | *Moved to **A12** — vectorising this step changes rounding and therefore changes output. It cannot be held to an empty golden diff.* | `steps/optical.py:85–89` |
+| B14 | Version drift in docs — `PROGRAM_OVERVIEW.md` and every module docstring still say v2.0.2 | repo-wide |
+| B15 | Remove the `[secret]` section from the shipped example rather than leaving an unused credential slot as an attractive nuisance. (No real key is committed: `config.ini` is correctly gitignored and holds only a placeholder.) | `config.ini.example:38` |
+
+---
+
+## Sequencing
+
+```
+P0   verification substrate            ← blocks everything
+ │
+B8   single version source             ← blocks partial commits (integrity check)
+ │
+A9   determinism                       ← blocks meaningful golden diffs
+A2   source_path in extractor          ← changes fixture schema; regenerate corpus
+ │
+A1 · A3 · A4 · A5 · A6 · A7 · A8 · A12 ← one commit + attributed diff each
+ │
+A10 · A11  calibration semantics       ← awaits your decision; resolve together
+ │
+B1–B15 (less B13)                      ← batched; golden diff must be empty
+ │
+tag v2.1.0                             ← parity contract for the Rust port
+```
+
+Rationale for the two blockers: B8 first because `verify_engine_integrity`
+aborts the program on any version mismatch, which makes incremental commits
+unrunnable. A9 next because a golden diff against non-deterministic output
+cannot distinguish a fix from noise.
+
+## Estimate
+
+P0 is the bulk of the calendar time and most of it is data recovery only you can
+do. The code work is roughly: Bucket A ~2 days, Bucket B ~1 day, test suite
+~2 days.
+
+## Open questions for you
+
+1. **A10** — which master-preference semantics do you want?
+2. **TEST 1–5 source data** — can it be restored, or should the corpus be
+   rebuilt from whatever datasets you still hold?
+3. Bucket A changes output **by design**. The reference files must be
+   regenerated and re-blessed after each fix. Do you want to review each
+   attributed diff before it is blessed, or only the cumulative one at v2.1.0?
