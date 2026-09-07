@@ -253,8 +253,32 @@ def format_image_type_table(group: pd.DataFrame, imagetype: str, logger: logging
         lines.append(f"\n {display_label}:\n")
         header = " {:<10} {:<8} {:<10} {:<15} {:<12} {:<15}"
         lines.append(header.format("Filter", "Frames", "Gain", "Egain", "Exposure", "Total Exposure"))
-        
-        summary_agg = image_group.groupby(table_group_keys, observed=True).agg({
+
+        # Darks and Bias are physically filter-independent, and
+        # calibration.py's own candidate matching already reflects that --
+        # neither dark_candidates nor bias_candidates constrain on filter.
+        # This table's grouping previously always included FILTER_NAME
+        # regardless of calibration type, found live against real
+        # unprocessed calibration data: some capture software stamps
+        # whatever filter happens to be mounted into every dark/bias
+        # frame's header too, not just lights'. In that dataset every
+        # dark/bias file happened to carry the same filter tag, so the
+        # only visible symptom was a misleading label (e.g. a MASTERDARKS
+        # row showing "Ha" instead of blank) -- but a filter change
+        # between calibration sessions would fragment one logical
+        # dark/bias set into multiple rows here, each understating its
+        # own Frames count, even though calibration.py's actual matching
+        # (and so the acquisition CSV's darks/bias columns) is and was
+        # unaffected. FlatDarks does constrain on filter in calibration.py
+        # (matching Flats), so it keeps grouping by it here too.
+        filter_matters_for_type = 'FLAT' in imagetype.upper()  # covers FLAT and DARKFLAT
+        cal_group_keys = (
+            [InternalColumns.FILTER_NAME, InternalColumns.GAIN_MATCH, InternalColumns.DURATION]
+            if filter_matters_for_type
+            else [InternalColumns.GAIN_MATCH, InternalColumns.DURATION]
+        )
+
+        summary_agg = image_group.groupby(cal_group_keys, observed=True).agg({
             InternalColumns.NUMBER: 'sum',
             InternalColumns.GAIN: 'first',
             InternalColumns.EGAIN: 'mean'
@@ -263,24 +287,26 @@ def format_image_type_table(group: pd.DataFrame, imagetype: str, logger: logging
         for _, row in summary_agg.iterrows():
             row_total_exposure = row[InternalColumns.NUMBER] * row[InternalColumns.DURATION]
             total_exposure += row_total_exposure
-            
+
             # Format gain for display (using linear integer GAIN)
             gain_val = row[InternalColumns.GAIN]
             gain_str = str(int(round(float(gain_val)))) if pd.notna(gain_val) else "N/A"
             egain_str = f"{float(row[InternalColumns.EGAIN]):.2f} e/ADU"
-            
-            # For Dark/Bias, the filter column should be blank if there is no
-            # real filter. Two distinct sentinels mean "no filter" here:
-            # 'No Filter' (the configured [defaults] value, injected only
-            # when the FITS/XISF file never had a FILTER column at all) and
-            # 'None' (AggregationStep's null-safety fill, applied per-cell
-            # when the column exists but this row's value was missing --
-            # e.g. calibration masters with no FILTER keyword in a dataset
-            # where other frames do have one). Previously only the former
-            # was blanked, so the latter leaked the literal text "None"
-            # into the report whenever it occurred.
-            filter_val = str(row[InternalColumns.FILTER_NAME])
-            if filter_val in ('No Filter', 'None'): filter_val = ""
+
+            if filter_matters_for_type:
+                # Blank if there is no real filter. Two distinct sentinels
+                # mean "no filter" here: 'No Filter' (the configured
+                # [defaults] value, injected only when the FITS/XISF file
+                # never had a FILTER column at all) and 'None'
+                # (AggregationStep's null-safety fill, applied per-cell
+                # when the column exists but this row's value was missing).
+                filter_val = str(row[InternalColumns.FILTER_NAME])
+                if filter_val in ('No Filter', 'None'): filter_val = ""
+            else:
+                # Not part of the group key for this calibration type --
+                # always blank, regardless of what any individual frame's
+                # header happened to record.
+                filter_val = ""
 
             lines.append(header.format(
                 filter_val, int(row[InternalColumns.NUMBER]), gain_str, egain_str,
