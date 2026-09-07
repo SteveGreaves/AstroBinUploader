@@ -155,8 +155,25 @@ class HeaderExtractor:
     def _read_fits(self, filepath: str) -> Dict[str, Any]:
         """Reads a standard FITS file header using Astropy."""
         with fits.open(filepath) as hdul:
+            # Select the first HDU that actually carries the metadata this
+            # pipeline reads, rather than unconditionally using HDU 0.
+            # Compressed images (.fits.fz / CompImageHDU) commonly store
+            # the real header -- IMAGETYP, EXPOSURE, DATE-OBS, etc. -- on
+            # the first image extension, leaving the primary HDU with only
+            # structural boilerplate (SIMPLE/BITPIX/NAXIS/EXTEND).
+            # Confirmed empirically: a CompImageHDU's IMAGETYP/EXPOSURE
+            # land in HDU 1, absent from HDU 0 entirely (A7 in
+            # REMEDIATION_PLAN.md). Falls back to HDU 0 if no HDU carries
+            # IMAGETYP, preserving today's behaviour for files that
+            # legitimately rely on [defaults] for it.
+            source_hdu = hdul[0]
+            for candidate in hdul:
+                if FITSKeywords.IMAGE_TYPE in candidate.header:
+                    source_hdu = candidate
+                    break
+
             # Convert header object to a standard Python dictionary
-            hdr = dict(hdul[0].header)
+            hdr = dict(source_hdu.header)
             hdr[FITSKeywords.FILENAME] = os.path.basename(filepath)
             # Identify if this is a Master frame with multiple sub-exposures
             hdr[FITSKeywords.NUMBER] = self._get_fit_number(hdr)
