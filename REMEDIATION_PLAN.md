@@ -471,8 +471,10 @@ A13  IMAGETYP master-label collapse    ← found live on SH2 101,      [done, a9
      (+ its reports.py knock-on)         not in either fixture
 A1   dedup regex over-truncation       ← anchored, vocab from real   [done, ff3d19b]
                                           WBPP output (SH2 101)
+A3 · A4  cluster stealing / geodesic   ← haversine, not raw geopy    [done, 2091c68]
+                                          (perf; see commit message)
  │
-A3 · A4 · A5 · A6 · A7 · A8 · A12      ← one commit + attributed diff each
+A5 · A6 · A7 · A8 · A12                ← one commit + attributed diff each
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
