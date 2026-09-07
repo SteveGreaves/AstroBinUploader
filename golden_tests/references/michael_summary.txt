@@ -1,0 +1,95 @@
+Observation session summary
+Generated 2026-02-11 14:10:32
+ Target: 28768-0-71 M016 Ha
+
+Site: Papworth Everard
+	Latitude: 0.0000°
+	Longitude: 0.0000°
+	Bortle scale: 4.0
+	SQM: 21.00 mag/arcsec²
+
+Equipment used:
+	Telescope           : ASA N12/f3.6 on ASA DDM85
+	Camera              : ASCOM TOUPTEK CAMERA
+	Capture software    : Voyager Release 2.3.12 - Built 2025-02-16
+	                    : Unknown package
+
+
+Observation period:
+	Start date               : 2025-05-27
+	End date                 : 2025-09-13
+	Days                     : 110
+	Observation sessions     : 3
+	Min temperature          : 20.0°C
+	Max temperature          : 20.0°C
+	Mean temperature         : 20.0°C
+
+
+ LIGHTS:
+ Target: 28768-0-71 M016 Ha
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ Ha       20       50       1.00 e/ADU   1.36 arcsec  -9.8°C       20.0°C       180.00 secs          1 hrs      0 mins   0.00 secs
+
+ Exposure time for 28768-0-71 M016 Ha: 1 hrs 0 mins 0.00 secs
+
+ Target: 28768-0-71 M016 OIII
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ OIII     20       50       1.00 e/ADU   1.36 arcsec  -9.8°C       20.0°C       180.00 secs          1 hrs      0 mins   0.00 secs
+
+ Exposure time for 28768-0-71 M016 OIII: 1 hrs 0 mins 0.00 secs
+
+ Target: 28768-0-71 M016 SII
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ SII      19       50       1.00 e/ADU   1.36 arcsec  -9.8°C       20.0°C       180.00 secs          0 hrs     57 mins   0.00 secs
+
+ Exposure time for 28768-0-71 M016 SII: 0 hrs 57 mins 0.00 secs
+
+ Target: 29744-0-71 M016 B
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ B        20       50       1.00 e/ADU   1.36 arcsec  -9.9°C       20.0°C       30.00 secs           0 hrs     10 mins   0.00 secs
+
+ Exposure time for 29744-0-71 M016 B: 0 hrs 10 mins 0.00 secs
+
+ Target: 29744-0-71 M016 G
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ G        20       50       1.00 e/ADU   1.36 arcsec  -9.9°C       20.0°C       30.00 secs           0 hrs     10 mins   0.00 secs
+
+ Exposure time for 29744-0-71 M016 G: 0 hrs 10 mins 0.00 secs
+
+ Target: 29744-0-71 M016 R
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ R        20       50       1.00 e/ADU   1.36 arcsec  -9.9°C       20.0°C       30.00 secs           0 hrs     10 mins   0.00 secs
+
+ Exposure time for 29744-0-71 M016 R: 0 hrs 10 mins 0.00 secs
+
+ Target: No target
+
+ Filter   Frames   Gain     Egain        Mean FWHM    Sensor Temp  Mean Temp    Exposure        Total Exposure 
+ No Filter 1        50       1.00 e/ADU   1.36 arcsec  -10.0°C      20.0°C       0.00 secs            0 hrs      0 mins   0.00 secs
+
+ Exposure time for No target: 0 hrs 0 mins 0.00 secs
+
+
+Total LIGHT Exposure Time: 3 hrs 27 mins 0.00 secs
+
+
+ Total number of images processed: 120
+
+Jason_Astrobin_Data_acquisition.csv
+
+       date    filter  number  duration  binning  gain  sensorCooling  fNumber  darks  flats  flatDarks  bias  bortle  meanSqm  meanFwhm  temperature
+ 2025-05-26      4663      20     180.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-05-26      4752      20     180.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-05-26      4844      19     180.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-11         G      12      30.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-11 No Filter       1       0.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-11         R      13      30.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-13         B      20      30.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-13         G       8      30.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0
+ 2025-09-13         R       7      30.0      1.0    50          -10.0      5.0      0      0          0     0     4.0     21.0      1.36         20.0

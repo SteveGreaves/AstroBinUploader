@@ -1,6 +1,5 @@
-__version__ = '2.0.3'
 """
-Header Extractor Module - AstroBin Upload Utility v2.0.2
+Header Extractor Module - AstroBin Upload Utility v2.1.0
 
 This module manages the high-speed extraction of metadata from multiple file 
 formats including FITS, XISF, and CSV. It is optimized for large image sets 
@@ -23,6 +22,35 @@ from astropy.io import fits
 import struct
 import xml.etree.ElementTree as ET
 from constants import FITSKeywords
+
+
+def _init_worker_logging(log_filepath: Optional[str], level: int):
+    """
+    Configure logging inside a spawned worker process.
+
+    On fork-based platforms (Linux, the default here), a worker process
+    inherits a full copy of the parent's already-configured logger --
+    including its handlers -- at fork time, so this is a harmless no-op
+    (the `if not worker_logger.handlers` guard skips re-adding). On
+    spawn-based platforms (macOS default since Python 3.8, Windows always),
+    a worker starts a fresh interpreter with no logging configured at all,
+    so every per-file parse error logged from inside extract_single_file
+    was silently dropped -- not printed, not written to the log file,
+    gone (B5 in REMEDIATION_PLAN.md). This runs once per worker via
+    ProcessPoolExecutor's `initializer`.
+    """
+    if not log_filepath:
+        return
+    worker_logger = logging.getLogger("AstroBinV2")
+    if not worker_logger.handlers:
+        handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(funcName)s - Line: %(lineno)d - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        worker_logger.addHandler(handler)
+        worker_logger.setLevel(level)
+
 
 class HeaderExtractor:
     """
@@ -60,21 +88,47 @@ class HeaderExtractor:
                     if file.lower().endswith(('.fits', '.fit', '.fts', '.xisf')):
                         file_paths.append(os.path.join(root, file))
 
+        # Deterministic dispatch order. os.walk's per-directory file order is
+        # OS/filesystem-dependent, and without this sort the final row order
+        # of raw_df would vary between otherwise-identical runs (see A9 in
+        # REMEDIATION_PLAN.md). Every downstream 'first wins' resolution --
+        # deduplication's survivor pick, the master-preference filters, the
+        # agg('first') columns in AggregationStep, and every .iloc[0] read in
+        # reports.py -- depends on this being stable.
+        file_paths.sort()
+
         total = len(file_paths)
-        headers = []
-        
+        results: Dict[str, Any] = {}
+
+        # Find the main logger's log file, if any, so worker processes can
+        # be configured to write to the same file (B5 in
+        # REMEDIATION_PLAN.md -- see _init_worker_logging above).
+        log_filepath = None
+        for h in self.logger.handlers:
+            if isinstance(h, logging.FileHandler):
+                log_filepath = h.baseFilename
+                break
+
         # Parallel Execution: Utilize multiple processes for XML/FITS parsing
         # This is significantly faster for XISF files which involve large XML blocks.
-        with ProcessPoolExecutor() as executor:
+        # Completion order under as_completed() is nondeterministic, so results
+        # are keyed by their originating path and reassembled in the sorted
+        # dispatch order below rather than appended in completion order.
+        with ProcessPoolExecutor(
+            initializer=_init_worker_logging,
+            initargs=(log_filepath, self.logger.level)
+        ) as executor:
             futures = {executor.submit(self.extract_single_file, fp): fp for fp in file_paths}
             for i, future in enumerate(as_completed(futures), 1):
+                fp = futures[future]
                 res = future.result()
                 if res:
-                    headers.append(res)
+                    results[fp] = res
                 # Real-time console progress update
                 print(f"\rScanning files: {i} of {total}...", end="", flush=True)
-        
+
         print("\n") # Ensure next console output starts on a new line
+        headers = [results[fp] for fp in file_paths if fp in results]
         self.logger.info(f"Extraction complete. {len(headers)} valid headers retrieved.")
         return pd.DataFrame(headers)
 
@@ -122,7 +176,14 @@ class HeaderExtractor:
             
             # Post-parsing cleanup: Strip quotes often found in raw FITS string values
             cleaned_hdr = {k: v.strip("'").strip('"') if isinstance(v, str) else v for k, v in hdr.items()}
-            
+
+            # Absolute source path, distinct from FILENAME (basename only).
+            # Lets DeduplicateStep key on directory as well as filename, so
+            # identically-named captures from different sessions/nights don't
+            # collapse into one (A2 in REMEDIATION_PLAN.md). Set after the
+            # quote-strip above since it is not raw header text.
+            cleaned_hdr[FITSKeywords.SOURCE_PATH] = os.path.abspath(filepath)
+
             # Horizontal Header Printing (Essential requirement for DEBUG mode)
             logger.debug(f"Recovered Header: {cleaned_hdr}")
             
@@ -135,8 +196,25 @@ class HeaderExtractor:
     def _read_fits(self, filepath: str) -> Dict[str, Any]:
         """Reads a standard FITS file header using Astropy."""
         with fits.open(filepath) as hdul:
+            # Select the first HDU that actually carries the metadata this
+            # pipeline reads, rather than unconditionally using HDU 0.
+            # Compressed images (.fits.fz / CompImageHDU) commonly store
+            # the real header -- IMAGETYP, EXPOSURE, DATE-OBS, etc. -- on
+            # the first image extension, leaving the primary HDU with only
+            # structural boilerplate (SIMPLE/BITPIX/NAXIS/EXTEND).
+            # Confirmed empirically: a CompImageHDU's IMAGETYP/EXPOSURE
+            # land in HDU 1, absent from HDU 0 entirely (A7 in
+            # REMEDIATION_PLAN.md). Falls back to HDU 0 if no HDU carries
+            # IMAGETYP, preserving today's behaviour for files that
+            # legitimately rely on [defaults] for it.
+            source_hdu = hdul[0]
+            for candidate in hdul:
+                if FITSKeywords.IMAGE_TYPE in candidate.header:
+                    source_hdu = candidate
+                    break
+
             # Convert header object to a standard Python dictionary
-            hdr = dict(hdul[0].header)
+            hdr = dict(source_hdu.header)
             hdr[FITSKeywords.FILENAME] = os.path.basename(filepath)
             # Identify if this is a Master frame with multiple sub-exposures
             hdr[FITSKeywords.NUMBER] = self._get_fit_number(hdr)
@@ -209,7 +287,14 @@ class HeaderExtractor:
                 table = hist_root.find(".//table[@id='images']")
                 if table is not None:
                     hdr[FITSKeywords.NUMBER] = int(table.get('rows', 1))
-            except Exception: pass
+            except (ET.ParseError, ValueError, TypeError) as e:
+                # Malformed ProcessingHistory XML or a non-numeric 'rows'
+                # attribute -- fall through to the fallback below rather
+                # than silently leaving NUMBER at 1 with no trace (B3 in
+                # REMEDIATION_PLAN.md).
+                logging.getLogger("AstroBinV2").debug(
+                    f"Could not parse ProcessingHistory NUMBER for {filepath}: {e}"
+                )
         
         # Fallback: If NUMBER is still 1, search FITS comments/history for ImageIntegration count
         if hdr[FITSKeywords.NUMBER] == 1:
@@ -220,7 +305,15 @@ class HeaderExtractor:
                     try:
                         hdr[FITSKeywords.NUMBER] = int(comment.split(':')[-1].strip())
                         break
-                    except Exception: pass
+                    except (ValueError, TypeError) as e:
+                        # Comment text matched but the trailing token
+                        # wasn't a plain integer -- keep NUMBER at its
+                        # current fallback rather than silently discarding
+                        # the mismatch with no trace (B3 in
+                        # REMEDIATION_PLAN.md).
+                        logging.getLogger("AstroBinV2").debug(
+                            f"Could not parse numberOfImages comment for {filepath}: {comment!r} ({e})"
+                        )
             
         return hdr
 
@@ -235,6 +328,15 @@ class HeaderExtractor:
         if isinstance(history, str): history = [history]
         for line in history:
             if 'ImageIntegration.numberOfImages:' in line:
-                try: return int(line.split()[-1])
-                except Exception: pass
+                try:
+                    return int(line.split()[-1])
+                except (ValueError, TypeError) as e:
+                    # Line matched but the trailing token wasn't a plain
+                    # integer -- fall through to the default of 1 rather
+                    # than silently discarding the mismatch with no trace
+                    # (B3 in REMEDIATION_PLAN.md).
+                    logging.getLogger("AstroBinV2").debug(
+                        f"Could not parse numberOfImages HISTORY line for "
+                        f"{hdr.get(FITSKeywords.FILENAME, '<unknown file>')}: {line!r} ({e})"
+                    )
         return 1

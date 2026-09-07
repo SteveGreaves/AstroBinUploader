@@ -1,5 +1,49 @@
 # Release Notes - AstroBin Upload Utility
 
+## [v2.1.0] - 2026-09-07
+### Remediation Release — Correctness, Determinism & a Regression Harness
+
+v2.1.0 is a correctness release. An audit of v2.0.3 produced
+`REMEDIATION_PLAN.md`: 14 defects that could change the numbers in your
+acquisition CSV or session summary, and 15 hygiene issues. All are fixed, each
+in its own commit with a verification note, and the output is now protected by
+a committed golden-regression harness.
+
+**Why upgrade.** Several of the Bucket A defects were silent — they produced a
+plausible-looking but wrong result rather than an error:
+- WBPP-calibrated frames whose filenames contained `_c` anywhere (for example
+  `..._calibrated_...`) could be merged into a single row, under-counting total
+  exposure.
+- Frames from different sessions that share a default filename
+  (`Light_0001.fits`) could collapse together.
+- GPS site clustering could split one physical site into several, or leave a
+  site's coordinates un-averaged.
+- With a null in a grouping key, integer columns could render as `100.0`
+  instead of `100` in the acquisition CSV.
+- Row order — and therefore every "first wins" pick — was not deterministic
+  between otherwise identical runs.
+
+**Calibration matching** now treats darks, bias, flats and flat-darks
+consistently: all constrain on binning and all honour master preference
+("latest master wins"). Darks and bias are correctly treated as
+filter-independent in the report table.
+
+**Under the hood.** The startup version handshake and the fourteen duplicated
+`__version__` strings are gone, replaced by a single `_version.py`. Logging is
+more robust (worker processes on macOS/Windows now log correctly; previously
+silent failures leave a debug trace). Dead code and an unused credential slot
+in the example config were removed.
+
+**Testing.** `golden_tests/run_golden.py` replays committed metadata fixtures
+through the `--test` path and byte-compares against blessed references — no
+external data, runs anywhere the repo is checked out. `pytest` is now
+installed in the project virtual environment.
+
+This release is the frozen parity target for a planned standalone port
+(`RUST_PORT_PLAN.md`).
+
+---
+
 ## [v2.0.3] - 2026-02-12
 ### Optical Metric Type Safety & History Integrity
 v2.0.3 addresses a critical stability issue and restores the project's historical documentation standards.

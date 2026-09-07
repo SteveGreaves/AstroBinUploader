@@ -1,6 +1,5 @@
-__version__ = '2.0.3'
 """
-Geocoding & Site Management Module - AstroBin Upload Utility v2.0.2
+Geocoding & Site Management Module - AstroBin Upload Utility v2.1.0
 
 This module is responsible for enriching the session metadata with 
 geographical site information. It performs two primary functions:
@@ -15,10 +14,45 @@ geographical site information. It performs two primary functions:
 import pandas as pd
 import numpy as np
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 from models import SessionState
-from geopy.geocoders import Nominatim
-from constants import InternalColumns, ImageType, ConfigSections
+from constants import InternalColumns, ImageType
+
+# Mean Earth radius in metres (IUGG value), used by the haversine distance
+# below.
+EARTH_RADIUS_M = 6371000.0
+
+# Cluster radius for Smart Proximity Clustering: GPS readings within this
+# distance of each other are treated as the same physical site. ~110m was
+# the value documented (but not, before A4 in REMEDIATION_PLAN.md, actually
+# achieved) by the original flat-degree Euclidean approximation.
+CLUSTER_RADIUS_M = 110.0
+
+def _haversine_distance_m(lat1, lon1, lat2, lon2):
+    """
+    Vectorized great-circle distance in metres (haversine formula).
+
+    Accepts scalars or numpy/pandas arrays (elementwise, via numpy
+    broadcasting). Verified against geopy.distance.distance (Karney's
+    geodesic) to agree within ~0.35m across equatorial, mid-latitude and
+    high-latitude test points -- comfortably precise enough for a 110m
+    clustering threshold, without the per-call overhead a Python loop of
+    geopy calls would carry across potentially thousands of frames (A4 in
+    REMEDIATION_PLAN.md).
+
+    A flat lat/lon Euclidean distance (the previous approach) treats a
+    degree of longitude as equal to a degree of latitude, which is only
+    true at the equator; at 52N (this project's reference test site) a
+    degree of longitude is roughly 38% shorter than a degree of latitude,
+    and the discrepancy grows with latitude. That silently narrowed the
+    effective clustering radius the further north (or south) the data was.
+    """
+    lat1r, lon1r, lat2r, lon2r = np.radians(lat1), np.radians(lon1), np.radians(lat2), np.radians(lon2)
+    dlat = lat2r - lat1r
+    dlon = lon2r - lon1r
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1r) * np.cos(lat2r) * np.sin(dlon / 2) ** 2
+    c = 2 * np.arcsin(np.sqrt(a))
+    return EARTH_RADIUS_M * c
 
 class GeocodeStep:
     """
@@ -48,40 +82,46 @@ class GeocodeStep:
         df = self._align_coordinates(df, logger)
 
         # --- Stage 2: Smart Proximity Clustering ---
-        # Instead of arbitrary rounding, we find clusters of coordinates 
-        # that are close to each other (e.g., < 150m) and treat them as one site.
-        
+        # Instead of arbitrary rounding, we find clusters of coordinates
+        # that are close to each other (within CLUSTER_RADIUS_M) and treat
+        # them as one site.
+
         # 1. Identify all unique coordinate pairs from all frames
         coords_df = df[[InternalColumns.SITE_LAT, InternalColumns.SITE_LONG]].copy()
         coords_df[InternalColumns.SITE_LAT] = pd.to_numeric(coords_df[InternalColumns.SITE_LAT], errors='coerce').fillna(0.0)
         coords_df[InternalColumns.SITE_LONG] = pd.to_numeric(coords_df[InternalColumns.SITE_LONG], errors='coerce').fillna(0.0)
-        
+
         unique_coords = coords_df.drop_duplicates().reset_index(drop=True)
         unique_coords['site_cluster'] = -1
-        
-        # 2. Distance-Based Grouping (greedy approach)
-        # Threshold: 0.00135 degrees is roughly 150m at the equator.
-        # We'll use a slightly tighter 100m threshold (0.0009 degrees) for precision.
-        dist_threshold = 0.001 # approx 110m
+
+        # 2. Distance-Based Grouping (greedy single-linkage approach)
         cluster_id = 0
-        
         for i in range(len(unique_coords)):
             if unique_coords.at[i, 'site_cluster'] == -1:
-                # Start a new cluster
+                # Start a new cluster, seeded by this point.
                 unique_coords.at[i, 'site_cluster'] = cluster_id
-                
-                # Find all other points within the threshold
+
                 lat_ref = unique_coords.at[i, InternalColumns.SITE_LAT]
                 lon_ref = unique_coords.at[i, InternalColumns.SITE_LONG]
-                
-                # Simple Euclidean approximation for performance 
-                # (accurate enough for small GPS drifts)
-                dist = np.sqrt(
-                    (unique_coords[InternalColumns.SITE_LAT] - lat_ref)**2 + 
-                    (unique_coords[InternalColumns.SITE_LONG] - lon_ref)**2
+
+                # Find all other points within the threshold, in real metres.
+                dist = _haversine_distance_m(
+                    unique_coords[InternalColumns.SITE_LAT], unique_coords[InternalColumns.SITE_LONG],
+                    lat_ref, lon_ref
                 )
-                
-                unique_coords.loc[dist < dist_threshold, 'site_cluster'] = cluster_id
+
+                # Only claim points not already claimed by an earlier
+                # cluster. A3 in REMEDIATION_PLAN.md: this mask previously
+                # had no '== -1' term, so a point already assigned to
+                # cluster 0 could be reassigned to cluster 1 by a later
+                # seed whose radius also reached it -- stripping cluster 0
+                # down to a single un-averaged point and defeating the
+                # whole purpose of centroid averaging. Restricting to
+                # unclaimed points makes this a standard (order-dependent,
+                # but internally consistent) greedy single-linkage
+                # clustering: once a point joins a cluster, it stays.
+                claim_mask = (dist < CLUSTER_RADIUS_M) & (unique_coords['site_cluster'] == -1)
+                unique_coords.loc[claim_mask, 'site_cluster'] = cluster_id
                 cluster_id += 1
 
         # 3. Calculate Cluster Centroids (Averaging)
@@ -167,12 +207,27 @@ class GeocodeStep:
                     df.at[i, InternalColumns.SITE_LAT] = lights[InternalColumns.SITE_LAT].iloc[0]
                     df.at[i, InternalColumns.SITE_LONG] = lights[InternalColumns.SITE_LONG].iloc[0]
                 else:
-                    # Euclidean Distance Match: Find the Light frame geographically closest to this calibration frame
-                    dist = np.sqrt((lights[InternalColumns.SITE_LAT] - plat)**2 + (lights[InternalColumns.SITE_LONG] - plon)**2)
+                    # Geodesic Distance Match: Find the Light frame geographically
+                    # closest to this calibration frame. A4 in
+                    # REMEDIATION_PLAN.md: a flat lat/lon Euclidean distance
+                    # here treats a degree of longitude as equal to a degree
+                    # of latitude, which only holds at the equator -- see
+                    # _haversine_distance_m's docstring above.
+                    dist = _haversine_distance_m(lights[InternalColumns.SITE_LAT], lights[InternalColumns.SITE_LONG], plat, plon)
                     closest = dist.idxmin()
                     df.at[i, InternalColumns.SITE_LAT] = lights.at[closest, InternalColumns.SITE_LAT]
                     df.at[i, InternalColumns.SITE_LONG] = lights.at[closest, InternalColumns.SITE_LONG]
-            except Exception: pass
+            except Exception as e:
+                # Leaves this row's coordinates as whatever they already
+                # were (possibly still missing) rather than crashing the
+                # whole pipeline over one calibration frame's coordinate
+                # alignment -- kept broad since this handles a wide range
+                # of tolerated data oddities, but previously gave no trace
+                # at all when it fired (B3 in REMEDIATION_PLAN.md).
+                logger.debug(
+                    f"Could not align coordinates for row {i} "
+                    f"({row.get(InternalColumns.FILENAME, '<unknown file>')}): {e}"
+                )
         return df
 
     def _find_site_in_db(self, db: pd.DataFrame, lat: float, lon: float, precision: int) -> Optional[pd.Series]:
@@ -202,5 +257,13 @@ class GeocodeStep:
             matches = db[mask]
             if not matches.empty:
                 return matches.iloc[0]
-        except Exception: pass
+        except Exception as e:
+            # Most commonly a malformed [sites] section (missing
+            # latitude/longitude keys) -- falls back to the caller's
+            # default site metadata either way, but previously gave no
+            # trace when the lookup itself failed outright, as opposed to
+            # simply finding no match (B3 in REMEDIATION_PLAN.md).
+            logging.getLogger("AstroBinV2").debug(
+                f"Site DB lookup failed for ({lat}, {lon}): {e}"
+            )
         return None

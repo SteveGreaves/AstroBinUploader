@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstroBin Upload Utility v2.0.2 (Clean Slate)
+AstroBin Upload Utility v2.1.0
 
 This is the primary entry point for the application. It orchestrates the 
 entire ETL (Extract, Transform, Load) workflow using a modern Pipeline 
@@ -37,79 +37,12 @@ from engine.steps.geocode import GeocodeStep
 from engine.steps.aggregate import AggregationStep
 from engine.exporter import Exporter
 from models import SessionState
-
-APP_VERSION = '2.0.3'
-
-def verify_engine_integrity(logger: logging.Logger):
-    """
-    Ensures all imported engine modules match the application version.
-    
-    This prevents 'Frankenstein' installations where a user might have 
-    mixed files from different versions of the utility.
-    """
-    import engine.loader
-    import engine.extractor
-    import engine.processor
-    import engine.reports
-    import engine.exporter
-    import engine.steps.base
-    import engine.steps.optical
-    import engine.steps.deduplicate
-    import engine.steps.calibration
-    import engine.steps.geocode
-    import engine.steps.aggregate
-    import models
-    import constants
-    import pipeline
-
-    modules = [
-        ('loader', engine.loader),
-        ('extractor', engine.extractor),
-        ('processor', engine.processor),
-        ('reports', engine.reports),
-        ('exporter', engine.exporter),
-        ('steps.base', engine.steps.base),
-        ('steps.optical', engine.steps.optical),
-        ('steps.deduplicate', engine.steps.deduplicate),
-        ('steps.calibration', engine.steps.calibration),
-        ('steps.geocode', engine.steps.geocode),
-        ('steps.aggregate', engine.steps.aggregate),
-        ('models', models),
-        ('constants', constants),
-        ('pipeline', pipeline)
-    ]
-
-    mismatches = []
-    for name, mod in modules:
-        mod_ver = getattr(mod, '__version__', 'MISSING')
-        if mod_ver != APP_VERSION:
-            mismatches.append(f"{name} ({mod_ver})")
-
-    if mismatches:
-        err_msg = f"CRITICAL: Engine Integrity Check Failed! Version mismatch in modules: {', '.join(mismatches)}. Expected: {APP_VERSION}"
-        logger.error(err_msg)
-        print(f"\n[INTEGRITY ERROR]: {err_msg}")
-        sys.exit(1)
-    
-    logger.info(f"Engine integrity verified for v{APP_VERSION}")
+from _version import __version__ as APP_VERSION
 
 def initialise_logging(log_filename: str) -> logging.Logger:
     """
     Initializes a professional logging system with automatic context resolution.
     """
-    import inspect
-
-    class FunctionNameFilter(logging.Filter):
-        def filter(self, record):
-            stack = inspect.stack()
-            for frame_info in stack:
-                if frame_info.filename != __file__ and 'logging' not in frame_info.filename:
-                    record.funcname = frame_info.function
-                    break
-            else:
-                record.funcname = 'unknown'
-            return True
-
     try:
         log_dir = os.path.dirname(log_filename)
         if log_dir and not os.path.exists(log_dir):
@@ -123,12 +56,22 @@ def initialise_logging(log_filename: str) -> logging.Logger:
         new_logger.setLevel(logging.INFO)
 
         handler = logging.FileHandler(log_filename, encoding='utf-8')
+        # %(funcName)s is stdlib logging's own resolution of the immediate
+        # caller (via the stack frame active at record creation), which is
+        # exactly what the previous FunctionNameFilter walked inspect.stack()
+        # by hand to reproduce on every single log record -- every
+        # logger.X() call in this codebase is made directly inside the
+        # function of interest (never through an intermediate wrapper), so
+        # the two report the same name, without the per-record stack walk
+        # (B4 in REMEDIATION_PLAN.md). %(lineno)d was already correct
+        # before this change -- it's captured by Logger.makeRecord() at
+        # record-creation time, before any Filter runs, so it was never
+        # actually affected by the custom filter.
         formatter = logging.Formatter(
-            '%(asctime)s - %(funcname)s - Line: %(lineno)d - %(levelname)s - %(message)s',
+            '%(asctime)s - %(funcName)s - Line: %(lineno)d - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         handler.setFormatter(formatter)
-        handler.addFilter(FunctionNameFilter())
         new_logger.addHandler(handler)
 
         new_logger.info("Logging system initialized successfully.")
@@ -147,7 +90,7 @@ def main():
     """
     # Define and parse CLI arguments
     parser = argparse.ArgumentParser(
-        description="AstroBin Upload Utility v2.0.2 - A high-performance ETL pipeline for astronomical metadata.",
+        description="AstroBin Upload Utility v2.1.0 - A high-performance ETL pipeline for astronomical metadata.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Example Usage:
@@ -183,10 +126,27 @@ def main():
     args = parser.parse_args()
 
     # --- Step 1: Environment Setup ---
-    
+
     # Resolve absolute paths to ensure reliable file access
     directory_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.directory_paths]
-    
+
+    # B10 in REMEDIATION_PLAN.md: previously unvalidated. A typo'd path
+    # would reach os.makedirs(output_dir, exist_ok=True) below, which
+    # creates every missing intermediate directory including the typo'd
+    # one itself -- silently manufacturing a new, empty directory tree
+    # rather than failing, and the pipeline would then proceed to scan it,
+    # producing a "0 images processed" result with no indication of the
+    # actual mistake. Fail clearly here instead.
+    invalid_paths = [p for p in directory_paths if not os.path.isdir(p)]
+    if invalid_paths:
+        for p in invalid_paths:
+            print(f"[ERROR] Not a directory: {p}")
+        print(
+            "\nOne or more input paths do not exist or are not directories. "
+            "Check for typos before re-running."
+        )
+        sys.exit(1)
+
     # Establish the primary output directory inside the first target path
     output_dir = os.path.join(directory_paths[0], 'AstroBinUploadInfo')
     os.makedirs(output_dir, exist_ok=True)
@@ -194,9 +154,6 @@ def main():
     # Initialize the centralized logging system
     log_file = os.path.join(output_dir, 'AstroBinUploader.log')
     logger = initialise_logging(log_file)
-    
-    # NEW: Verify that all engine components are in version parity
-    verify_engine_integrity(logger)
 
     logger.info("Logging initialized.")
     if args.debug:
@@ -269,13 +226,18 @@ def main():
         logger.error("The application encountered a fatal error and must exit.")
         logger.exception(e)
         
-        # If we have any data at all, dump it for emergency diagnostics
+        # If we have any data at all, dump it for emergency diagnostics.
+        # Kept broad and still non-fatal on purpose -- this runs while the
+        # program is already dying, and must never itself raise -- but now
+        # at least logs what went wrong with the dump attempt, rather than
+        # silently discarding it (B3 in REMEDIATION_PLAN.md).
         try:
             if 'raw_df' in locals() and not raw_df.empty:
                 emergency_csv = os.path.join(output_dir, "emergency_raw_dump.csv")
                 raw_df.to_csv(emergency_csv, index=False)
                 print(f"Emergency data dump saved to: {emergency_csv}")
-        except: pass
+        except Exception as dump_error:
+            logger.debug(f"Emergency data dump also failed: {dump_error}")
 
         print(f"\n[CRITICAL ERROR]: {str(e)}")
         print(f"Detailed diagnostics have been saved to: {log_file}")

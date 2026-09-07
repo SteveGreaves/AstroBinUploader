@@ -1,6 +1,5 @@
-__version__ = '2.0.3'
 """
-Standard Metadata Normalization Module - AstroBin Upload Utility v2.0.2
+Standard Metadata Normalization Module - AstroBin Upload Utility v2.1.0
 
 This module implements the first stage of the transformation pipeline: 
 'NormalizeHeadersStep'. Its primary responsibility is to take the raw, 
@@ -18,10 +17,41 @@ Tasks performed:
 """
 
 import pandas as pd
-import numpy as np
 import logging
 from models import SessionState
-from constants import FITSKeywords, InternalColumns, ImageType, ConfigSections
+from constants import InternalColumns, ImageType
+
+
+def _coalesce_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merges columns sharing the same name, keeping the first non-null value
+    across each duplicate-named group (left to right).
+
+    B2 in REMEDIATION_PLAN.md: replaces the deprecated
+    `df.groupby(level=0, axis=1).first()` (FutureWarning on pandas 2.2,
+    removed in pandas 3). The stdlib-suggested direct replacement,
+    `df.T.groupby(level=0).T`, is NOT a safe drop-in here: transposing a
+    DataFrame that mixes numeric and string columns (which this one
+    always does -- e.g. 'exposure' alongside 'imagetyp') upcasts every
+    column to object dtype and turns NaN into None, silently reproducing
+    the exact object-dtype corruption fixed in A5 -- verified directly
+    before writing this. Coalescing within each same-named group's own
+    sub-frame instead keeps each group's original, homogeneous dtype,
+    since duplicate columns share a name precisely because they represent
+    the same logical field. Column order is sorted to match groupby's
+    default `sort=True` exactly, since that's what the replaced call
+    produced. Verified against the original call with `.equals()`, not
+    just eyeballed, across both dtype-mixed and duplicate-plus-unique
+    column-order cases.
+    """
+    if not df.columns.duplicated().any():
+        return df
+    result = {}
+    for name in sorted(df.columns.unique()):
+        sub = df[name]
+        result[name] = sub if isinstance(sub, pd.Series) else sub.bfill(axis=1).iloc[:, 0]
+    return pd.DataFrame(result, index=df.index)
+
 
 class NormalizeHeadersStep:
     """
@@ -72,26 +102,43 @@ class NormalizeHeadersStep:
                     if col != internal_key and col in df.columns:
                         df.drop(columns=[col], inplace=True)
 
-        # --- Stage 2: Default Injection ---
-        # For any core metadata still missing after extraction and overrides, 
-        # inject the user-defined fallback values.
-        for k, v in config.defaults.items():
-            if k not in df.columns:
-                logger.debug(f"Default Injection: Key '{k}' not found, using default '{v}'")
-                df[k] = v
-
-        # --- Stage 3: Column Standardization ---
-        # Normalize all column names to lowercase for consistent internal processing.
-        # We must also merge any duplicate columns created by case variations (e.g., 'GAIN' and 'gain').
+        # --- Stage 2: Column Standardization ---
+        # Normalize all column names to lowercase for consistent internal
+        # processing, BEFORE default injection. We must also merge any
+        # duplicate columns created by case variations (e.g. 'GAIN' and
+        # 'gain') at this point.
+        #
+        # A8 in REMEDIATION_PLAN.md: default injection used to run first,
+        # against the still-uppercase raw columns, and only *then* would
+        # everything get lowercased and coalesced. That made a default's
+        # survival depend on where its column landed relative to a
+        # differently-cased genuine column once both were lowercased --
+        # itself dependent on non-obvious pandas append-order behaviour.
+        # Normalizing case first and injecting defaults only into columns
+        # that are *still* genuinely absent afterwards removes that
+        # implicit dependency entirely, regardless of whether the original
+        # ordering was ever shown to misbehave on real data (it wasn't,
+        # empirically, for the FITS/XISF uppercase-key convention this
+        # pipeline actually sees -- but nothing enforced that assumption).
         logger.debug("Normalizing all column names to lowercase")
         df.columns = [c.lower() for c in df.columns]
-        
+
         # Identify and merge duplicate columns
         if df.columns.duplicated().any():
             logger.debug("Merging duplicate columns")
-            # Group by column name and coalesce (take the first non-null value)
-            df = df.groupby(level=0, axis=1).first()
-        
+            df = _coalesce_duplicate_columns(df)
+
+        # --- Stage 3: Default Injection ---
+        # For any core metadata still missing after extraction, overrides,
+        # and case normalization, inject the user-defined fallback values.
+        # Defaults are keyed uppercase in config.ini/AppConfig; lowercase
+        # them here to match the now-normalized dataframe.
+        for k, v in config.defaults.items():
+            k_lower = k.lower()
+            if k_lower not in df.columns:
+                logger.debug(f"Default Injection: Key '{k}' not found, using default '{v}'")
+                df[k_lower] = v
+
         # --- Stage 4: Initial Filtering ---
         # Drop 'MASTERLIGHT' frames.
         # We calculate exposures from individual subs; masters would double the total.
@@ -128,12 +175,30 @@ class NormalizeHeadersStep:
                 'DARK FLAT': ImageType.DARK_FLAT.value
             }
             
-            # Apply mappings (longer keywords first to prevent partial matches like 'DARK' matching 'DARKFLAT')
+            # Apply mappings (longer keywords first to prevent partial matches like 'DARK' matching 'DARKFLAT').
+            #
+            # Matches are evaluated against a frozen snapshot of the original
+            # values, and a row is only ever assigned once. Previously each
+            # mask was recomputed against df[itype_col] *after* prior
+            # iterations had already mutated it, so a row correctly set to
+            # 'MASTERDARK' by the 'MASTER DARK' keyword was then reprocessed
+            # by the later, shorter 'DARK' keyword -- which matches
+            # 'MASTERDARK' as a substring of its own output -- and clobbered
+            # straight back down to plain 'DARK'. In practice this meant
+            # every master calibration frame silently lost its master
+            # designation, which made the master-preference check in
+            # CalibrationMatcherStep.resolve_count() (it looks for a
+            # 'MASTER' substring) permanently unreachable, risking
+            # double-counted calibration frames whenever a master and its
+            # own raw subs coexisted (A13 in REMEDIATION_PLAN.md).
+            original_itype = df[itype_col].copy()
+            assigned = pd.Series(False, index=df.index)
             for keyword, normalized in sorted(type_map.items(), key=lambda x: len(x[0]), reverse=True):
-                mask = df[itype_col].str.contains(keyword, case=False, na=False)
+                mask = original_itype.str.contains(keyword, case=False, na=False) & ~assigned
                 if mask.any():
                     logger.debug(f"Converted IMAGETYP keyword '{keyword}' to {normalized}")
                 df.loc[mask, itype_col] = normalized
+                assigned |= mask
 
         # --- Stage 7: Core Column Hardening ---
         # Ensure critical columns exist and are strictly typed.
@@ -196,12 +261,13 @@ class NormalizeHeadersStep:
 
     def _execute_master_preference(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Final authority on calibration hierarchy. 
-        If a group of frames (same hardware axes) contains a MASTER, 
+        Final authority on calibration hierarchy.
+        If a group of frames (same hardware axes) contains a MASTER,
         discard everything else in that group.
         """
+        logger = logging.getLogger("AstroBinV2")
         itype_col = InternalColumns.IMAGE_TYPE
-        
+
         # 1. Identify Calibration vs Light using original labels
         def is_cal(val):
             v = str(val).upper()
@@ -220,16 +286,26 @@ class NormalizeHeadersStep:
             # Stripping 'MASTER' and removing spaces ensures 'MASTER FLAT' groups with 'FLAT'
             base_type = orig_itype.replace('MASTER', '').replace(' ', '').strip()
             
-            # Use raw numeric values for precise hardware grouping
+            # Use raw numeric values for precise hardware grouping. This
+            # runs before Stage 7's core-column hardening, so GAIN/EGAIN
+            # may still be genuinely non-numeric or missing here.
             try:
                 gain = int(round(float(row[InternalColumns.GAIN])))
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Master preference: unparseable GAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 0 ({e})"
+                )
                 gain = 0
-                
+
             try:
                 # Reduce precision to 2 decimals to bridge master/raw EGAIN differences
                 egain = f"{float(row[InternalColumns.EGAIN]):.2f}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Master preference: unparseable EGAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 1.00 ({e})"
+                )
                 egain = "1.00"
                 
             binning = str(row[InternalColumns.BINNING]).strip()
@@ -244,7 +320,11 @@ class NormalizeHeadersStep:
             if base_type in ['DARK', 'BIAS']:
                 try:
                     duration = f"{float(row[InternalColumns.DURATION]):.2f}"
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(
+                        f"Master preference: unparseable DURATION for "
+                        f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using 0.00 ({e})"
+                    )
                     duration = "0.00"
                 return (base_type, gain, egain, binning, duration)
             else:
@@ -255,14 +335,45 @@ class NormalizeHeadersStep:
         # 3. Master Preemption: Within each group, if a Master exists, keep ONLY one master.
         final_cals = []
         dropped_count = 0
-        logger = logging.getLogger("AstroBinV2")
-        
-        for _, group in cals.groupby('_group_key'):
+
+        for group_key, group in cals.groupby('_group_key'):
             is_master_mask = group[itype_col].astype(str).str.upper().str.contains('MASTER', na=False)
             if is_master_mask.any():
-                # KEEP ONLY the first master frame found in this hardware group, drop all raws
-                dropped_count += len(group) - 1
-                final_cals.append(group[is_master_mask].iloc[[0]])
+                # KEEP ONLY one master frame for this hardware group, drop all raws.
+                #
+                # A10 in REMEDIATION_PLAN.md, per user decision: masters
+                # should always be the latest available. There normally
+                # shouldn't be more than one master per (type, gain, egain,
+                # binning, duration/filter) group in the first place -- if
+                # there is, prefer the one with the most recent DATE-OBS
+                # rather than an arbitrary "first found" (which A9 made
+                # deterministic, but deterministic isn't the same as
+                # meaningful: it was really just picking whichever file the
+                # sorted scan happened to reach first).
+                masters = group[is_master_mask]
+                if len(masters) > 1:
+                    parsed_dates = pd.to_datetime(masters[InternalColumns.DATE_OBS], errors='coerce')
+                    if parsed_dates.notna().any():
+                        latest_idx = parsed_dates.idxmax()
+                        chosen = masters.loc[[latest_idx]]
+                        logger.debug(
+                            f"Master Preference: {len(masters)} masters found for group "
+                            f"{group_key}; kept the most recent (DATE-OBS={parsed_dates.loc[latest_idx]})."
+                        )
+                    else:
+                        # No usable DATE-OBS on any candidate -- fall back
+                        # to the first found under the deterministic scan
+                        # order (A9), rather than erroring.
+                        chosen = masters.iloc[[0]]
+                        logger.debug(
+                            f"Master Preference: {len(masters)} masters found for group "
+                            f"{group_key} but none had a usable DATE-OBS; kept the first "
+                            f"found under scan order."
+                        )
+                else:
+                    chosen = masters
+                dropped_count += len(group) - len(chosen)
+                final_cals.append(chosen)
             else:
                 # Keep all raw frames if no master exists
                 final_cals.append(group)

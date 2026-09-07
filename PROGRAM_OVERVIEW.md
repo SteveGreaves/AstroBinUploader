@@ -29,7 +29,7 @@ If both raw subs and a Master integration exist for the same hardware group, the
 ### Vectorization
 All statistical operations are performed using Pandas vectorized logic rather than Python loops, allowing the utility to process thousands of images in seconds.
 
-## Debugging and Testing (v2.0.2)
+## Debugging and Testing (v2.1.0)
 The system is built for high transparency and robust error recovery:
 -   **Raw Data Capture**: `debug_step_00_RawHeaders.csv` stores the metadata exactly as read from disk. This is the **only supported source** for standard re-testing via the `--test` flag.
 -   **Emergency Diagnostics**: Any fatal crash triggers an automatic generation of `emergency_raw_dump.csv`, preserving scanned metadata for immediate recovery using the `--test` flag.

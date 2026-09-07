@@ -1,6 +1,5 @@
-__version__ = '2.0.3'
 """
-Calibration Matching Module - AstroBin Upload Utility v2.0.2
+Calibration Matching Module - AstroBin Upload Utility v2.1.0
 
 This module implements the 'Calibration Matcher' logic, identifying which 
 Dark, Flat, and Bias frames belong to each Light frame. 
@@ -12,10 +11,16 @@ Improvements:
 """
 
 import pandas as pd
-import numpy as np
 import logging
 from models import SessionState
 from constants import InternalColumns, ImageType
+
+# EGAIN is treated as "not meaningfully set" when it sits within this
+# tolerance of the NormalizeHeadersStep default (1.0) -- a value that close
+# to the placeholder is far more likely to be the unset default than a
+# genuine electronic gain reading of exactly 1.0 e/ADU, so the hybrid key
+# falls back to the linear integer GAIN instead.
+EGAIN_UNSET_TOLERANCE = 0.0001
 
 class CalibrationMatcherStep:
     """
@@ -36,16 +41,23 @@ class CalibrationMatcherStep:
             try:
                 egain_val = float(row[InternalColumns.EGAIN])
                 # Use a rounded signature (2 decimals) to bridge precision differences (0.2467 -> 0.25)
-                if abs(egain_val - 1.0) > 0.0001:
+                if abs(egain_val - 1.0) > EGAIN_UNSET_TOLERANCE:
                     return f"E_{egain_val:.2f}"
-            except:
-                pass
-            
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Hybrid gain key: unparseable EGAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, falling back to GAIN ({e})"
+                )
+
             # Fallback to Linear Gain anchor
             try:
                 gain_val = int(round(float(row[InternalColumns.GAIN])))
                 return f"G_{gain_val}"
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(
+                    f"Hybrid gain key: unparseable GAIN for "
+                    f"{row.get(InternalColumns.FILENAME, '<unknown file>')}, using G_0 ({e})"
+                )
                 return "G_0"
 
         df[InternalColumns.GAIN_MATCH] = df.apply(create_hybrid_key, axis=1)
@@ -150,18 +162,34 @@ class CalibrationMatcherStep:
             
             def resolve_count(candidates):
                 if candidates.empty: return 0
-                
+
                 # Check for Master presence
                 is_master_mask = candidates[InternalColumns.IMAGE_TYPE].str.upper().str.contains('MASTER', na=False)
-                
+
                 if is_master_mask.any():
-                    # If Masters exist, keep ONLY the first one found to prevent double-counting 
+                    # If Masters exist, keep ONLY one to prevent double-counting
                     # between multiple identified master versions of the same data.
-                    final_set = candidates[is_master_mask].iloc[[0]]
+                    #
+                    # A10 in REMEDIATION_PLAN.md, per user decision: prefer
+                    # the most recent master (by DATE-OBS) rather than an
+                    # arbitrary "first found", mirroring the same rule in
+                    # base.py's _execute_master_preference. This branch was
+                    # unreachable before A13 fixed IMAGETYP normalization
+                    # (no row could carry a 'MASTER' label by the time this
+                    # step ran), so it had no observable effect until now.
+                    masters = candidates[is_master_mask]
+                    if len(masters) > 1:
+                        parsed_dates = pd.to_datetime(masters[InternalColumns.DATE_OBS], errors='coerce')
+                        if parsed_dates.notna().any():
+                            final_set = masters.loc[[parsed_dates.idxmax()]]
+                        else:
+                            final_set = masters.iloc[[0]]
+                    else:
+                        final_set = masters
                 else:
                     # Use all raws
                     final_set = candidates
-                
+
                 return int(final_set[InternalColumns.NUMBER].sum())
 
             # 4c. Assign Counts
@@ -173,13 +201,22 @@ class CalibrationMatcherStep:
             lights.at[idx, 'bias']  = b_count
             lights.at[idx, 'flats'] = f_count
             
-            # DarkFlats usually don't have Masters in the same way, but applying safe logic
-            df_candidates = cals[
+            # FlatDarks: Match Filter, Gain, Bin -- same criteria as Flats,
+            # and routed through the same resolve_count() master-preference
+            # logic as the other three calibration types (A11 in
+            # REMEDIATION_PLAN.md, per user decision). Previously this
+            # omitted the BINNING constraint entirely (matching flat-darks
+            # shot at a different binning to the light), and summed master
+            # + raw candidates together unconditionally instead of
+            # preferring the master -- both inconsistent with how darks,
+            # bias and flats are matched just above.
+            flat_dark_candidates = cals[
                 cals[InternalColumns.IMAGE_TYPE].str.upper().str.contains('DARKFLAT', na=False) & \
                 (cals[InternalColumns.FILTER_NAME].str.lower() == str(row[InternalColumns.FILTER_NAME]).lower()) & \
-                (cals[InternalColumns.GAIN_MATCH] == row[InternalColumns.GAIN_MATCH])
+                (cals[InternalColumns.GAIN_MATCH] == row[InternalColumns.GAIN_MATCH]) & \
+                (cals[InternalColumns.BINNING] == row[InternalColumns.BINNING])
             ]
-            fd_count = int(df_candidates[InternalColumns.NUMBER].sum())
+            fd_count = resolve_count(flat_dark_candidates)
             lights.at[idx, 'flatDarks'] = fd_count
 
             if d_count > 0 or b_count > 0 or f_count > 0 or fd_count > 0:

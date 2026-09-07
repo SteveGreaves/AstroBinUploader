@@ -28,7 +28,7 @@
         SWCREATE = Unknown package
         USEOBSDATE = False
 [override]
-        SWCREATOR = CREATOR
+        SWCREATE = CREATOR
         EXPOSURE = EXPTIME
         SITE = SITENAME
         FOCNAME = FOCUSER
@@ -44,10 +44,6 @@
         Blue = 4637
         Lum = 2906
         CLS = 4632
-[secret]
-        #API key        API endpoint
-        YOUR_API_KEY = https://www.lightpollutionmap.info/QueryRaster/
-        EMAIL_ADDRESS = your_email@example.com
 [sites]
         [["My Full Site Address, Country, Postcode"]]
                 latitude = 0.0000
