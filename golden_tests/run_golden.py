@@ -5,8 +5,12 @@ Golden Test Harness - AstroBin Upload Utility
 Replays every committed fixture in golden_tests/fixtures/ through the
 pipeline via the --test CSV-injection path, and byte-compares the result
 against golden_tests/references/. No filesystem scan, no machine-specific
-data, no network access -- this is meant to run anywhere the repo is
-checked out.
+data, no network access -- this runs anywhere the repo is checked out.
+
+Machine independence depends on golden_config.ini, which is committed and
+passed via --config. The repo's own config.ini is gitignored; using it
+(as this harness did before that file existed) made the references
+reproducible only on the maintainer's machine.
 
 Fixtures are captured with:
     python3 AstroBinUpload.py <data_dir> --debug
@@ -43,6 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REFERENCES_DIR = Path(__file__).resolve().parent / "references"
 RUN_OUTPUT_DIR = Path(__file__).resolve().parent / "run_output"
+GOLDEN_CONFIG = Path(__file__).resolve().parent / "golden_config.ini"
 
 # Only the generation timestamp is expected to vary between runs.
 _GENERATED_LINE = re.compile(r"^Generated .*$", re.MULTILINE)
@@ -82,9 +87,17 @@ def run_fixture(fixture_csv: Path, bless: bool) -> tuple[str, bool, str]:
     local_csv = scenario_dir / "raw.csv"
     shutil.copy(fixture_csv, local_csv)
 
+    # --config is mandatory here, not cosmetic. Without it the pipeline falls
+    # back to the repo's config.ini, which is gitignored -- so on a fresh
+    # clone the first run auto-generates a default template and exits 0, and
+    # subsequent runs compare against that default instead of the
+    # configuration the references were actually blessed under. Verified: a
+    # clean clone failed 2/2 before this argument was added (wrong site name,
+    # wrong session grouping via USEOBSDATE, different FWHM/SQM).
     proc = subprocess.run(
         [sys.executable, str(REPO_ROOT / "AstroBinUpload.py"),
-         str(scenario_dir), "--test", str(local_csv)],
+         str(scenario_dir), "--test", str(local_csv),
+         "--config", str(GOLDEN_CONFIG)],
         cwd=REPO_ROOT, capture_output=True, text=True, timeout=600,
     )
     if proc.returncode != 0:
