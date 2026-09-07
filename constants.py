@@ -47,6 +47,11 @@ class FITSKeywords:
     FILENAME = 'FILENAME'      # Original filename for traceability
     NUMBER = 'NUMBER'          # Count of sub-exposures (for Master frames)
     IMSCALE = 'IMSCALE'        # Image scale (arcsec/pixel)
+    SOURCE_PATH = 'SOURCE_PATH' # Absolute filesystem path, for directory-aware
+                                 # deduplication (A2 in REMEDIATION_PLAN.md).
+                                 # Not a real FITS/XISF keyword; synthesized by
+                                 # the extractor. Absent on CSVs captured by an
+                                 # older version -- see extract_from_csv.
 
 class ConfigSections:
     """
@@ -94,6 +99,7 @@ class InternalColumns:
     ROTATOR_NAME = 'rotname'
     ROTATOR_ANGLE = 'rotantang'
     FILENAME = 'filename'
+    SOURCE_PATH = 'source_path'
     NUMBER = 'number'
     DATE_OBS = 'date-obs'
     SITE_NAME = 'site'

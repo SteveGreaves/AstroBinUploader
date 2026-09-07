@@ -14,6 +14,7 @@ highest-priority version (usually the raw capture or the XISF master)
 to ensure accurate total exposure calculations.
 """
 
+import os
 import pandas as pd
 import re
 import logging
@@ -48,19 +49,43 @@ class DeduplicateStep:
         # to identify the original capture name. 
         # Example: 'M31_Light_001_c.xisf' and 'M31_Light_001.fits' both map to 'M31_Light_001'
         df['base_filename'] = df[InternalColumns.FILENAME].str.extract(
-            r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)', 
+            r'(.+?)(?:_c.*)?(\.xisf|\.fits|\.fit|\.fts)',
             flags=re.IGNORECASE
         )[0]
-        
+
+        # --- Stage 1b: Directory Key ---
+        # Deduplication must be scoped to a directory: two different capture
+        # sessions frequently reuse the same filename (e.g. many capture
+        # tools default to 'Light_0001.fits'), and without this, frames from
+        # unrelated sessions would collapse into one (A2 in
+        # REMEDIATION_PLAN.md). SOURCE_PATH is only absent when replaying a
+        # --test CSV captured by a pre-A2 version; degrade gracefully to the
+        # old filename-only behaviour in that case rather than erroring, so
+        # existing debug_step_00_RawHeaders.csv / emergency_raw_dump.csv
+        # exports stay replayable.
+        if InternalColumns.SOURCE_PATH in df.columns:
+            df['_dedup_dir'] = df[InternalColumns.SOURCE_PATH].apply(
+                lambda p: os.path.dirname(str(p)) if pd.notna(p) else ''
+            )
+        else:
+            logger.warning(
+                "SOURCE_PATH column absent (--test CSV predates A2) -- "
+                "deduplicating on filename alone, which can merge "
+                "identically-named captures from different directories. "
+                "Re-run with a live directory scan, or a fixture captured "
+                "by the current version, to get directory-aware dedup."
+            )
+            df['_dedup_dir'] = ''
+
         # --- Stage 2: Priority Selection ---
-        # When multiple files share the same base, we apply a ranking system 
-        # to decide which one to keep.
+        # When multiple files share the same (directory, base filename), we
+        # apply a ranking system to decide which one to keep.
         final_rows = []
-        
+
         # Preference: PixInsight XISF > Standard FITS > Aliases
         ext_priority = {'.xisf': 0, '.fits': 1, '.fit': 2, '.fts': 3}
 
-        for base, group in df.groupby('base_filename'):
+        for (dedup_dir, base), group in df.groupby(['_dedup_dir', 'base_filename']):
             if pd.isna(base): continue
             
             # Create a rank for each file based on its extension
@@ -87,7 +112,7 @@ class DeduplicateStep:
             
         # Reconstruct the dataframe from the unique selection
         if final_rows:
-            new_df = pd.DataFrame(final_rows).drop(columns=['base_filename', 'ext_rank'])
+            new_df = pd.DataFrame(final_rows).drop(columns=['base_filename', 'ext_rank', '_dedup_dir'])
             new_count = len(new_df)
             if orig_count != new_count:
                 logger.info(f"Deduplication: Removed {orig_count - new_count} duplicate/intermediate frames")

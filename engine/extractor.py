@@ -135,7 +135,14 @@ class HeaderExtractor:
             
             # Post-parsing cleanup: Strip quotes often found in raw FITS string values
             cleaned_hdr = {k: v.strip("'").strip('"') if isinstance(v, str) else v for k, v in hdr.items()}
-            
+
+            # Absolute source path, distinct from FILENAME (basename only).
+            # Lets DeduplicateStep key on directory as well as filename, so
+            # identically-named captures from different sessions/nights don't
+            # collapse into one (A2 in REMEDIATION_PLAN.md). Set after the
+            # quote-strip above since it is not raw header text.
+            cleaned_hdr[FITSKeywords.SOURCE_PATH] = os.path.abspath(filepath)
+
             # Horizontal Header Printing (Essential requirement for DEBUG mode)
             logger.debug(f"Recovered Header: {cleaned_hdr}")
             
