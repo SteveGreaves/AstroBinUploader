@@ -648,3 +648,31 @@ do. The code work is roughly: Bucket A ~2 days, Bucket B ~1 day, test suite
 3. Bucket A changes output **by design**. The reference files must be
    regenerated and re-blessed after each fix. Do you want to review each
    attributed diff before it is blessed, or only the cumulative one at v2.1.0?
+
+---
+
+## GitHub issue reconciliation
+
+The audit above was written as an internal findings list and never cited an
+issue number, even though most of Bucket A was derived from the open tracker.
+This section closes that loop. Verified against the `v2.1.0` code
+(2026-09-07).
+
+| Issue | Reporter's ask | Maps to | Status | Close action |
+|---|---|---|---|---|
+| **#11** | A `_c`/`_C` token anywhere in a filename collapses every frame into one row | **A1** + **A2** | **Resolved.** Anchored `WBPP_FILENAME` regex; dedup key is now `(dirname(source_path), base_filename)`. Verified against the exact `CandidateDolphin` filenames in the report. | Close, referencing `ff3d19b` / #12 |
+| **#4** + PR **#8** | `--config` flag to select an `.ini` per scope | pre-existing (v2.0.1) | **Resolved.** `--config` / `-c`, `AstroBinUpload.py:120`. | Close #4; close PR #8 as superseded |
+| **#10** | Read `ImageIntegration.numberOfImages` from a master's HISTORY instead of reporting `1` | extractor deep-inspection | **Core resolved.** Parsed from XISF `ProcessingHistory` table rows, XISF FITSKeyword COMMENT/HISTORY, and FITS `HISTORY` (`_get_fit_number`). The optional `[calibrationoverrides]` ini fallback is **not** built. | Comment: ask for a re-test on `v2.1.0`; split the ini fallback into a separate `enhancement` |
+| **#9** | Both a 180 s and a 600 s master dark detected; one dark per light | **A11** (binning), **A10** (master pref), **A13/A14** (labels + report) | **Mechanisms present.** Dark matching keys on gain + binning + duration; report no longer groups darks by filter. Reporter's output was pre-fix (v1.4.5). | Comment: ask for a re-test on `v2.1.0` before closing |
+| **#3** | `ROTATOR` carries the mechanical angle, not the name | keyword constants | **Structurally resolved.** Name keys on `ROTNAME`, angle on `ROTANTANG`; `ROTATOR` is no longer read as the name. Vestige: the auto-generated default config still seeds `ROTATOR` rather than `ROTNAME`. | Fix the default-dict key, then close |
+| **#6** | Built-in mapping of `AOCSKYQU`→SQM, `AOCAMBT`→FOCTEMP | **A6** (`[override]` plumbing) | **Achievable by config today** (`SQM = AOCSKYQU`, `FOCTEMP = AOCAMBT` in `[override]`). No zero-config default. | Decide: ship as default aliases, or document the `[override]` recipe and close |
+| **#5** | Override *values* (e.g. `EAF` → full focuser name) | — | **Not built.** `[override]` remaps keywords, not values. Genuine feature request. | Keep open as `enhancement` |
+
+**Blocked bookkeeping**: the `gh issue close` / `gh pr merge` calls above are
+denied by this session's auto-mode classifier. They need `Bash(gh:*)` added to
+`autoMode.allow`, or the maintainer runs them.
+
+**Remaining code work implied by the table**: the #3 default-dict key
+(one line); the maintainer's decision on #6 (default aliases vs documented
+recipe); #5 and the #10 ini fallback if wanted (both `enhancement`, out of the
+v2.1.0 scope).
