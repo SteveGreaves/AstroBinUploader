@@ -523,26 +523,32 @@ dead code, and is exactly the mechanism A10/A11 depend on to matter at all.
 
 ## Bucket B — corrections with no output change
 
-Batch these into a small number of commits. The golden diff must be **empty**
-for every one; that is the acceptance test.
+**Status: complete.** All fifteen items (B1–B15, less B13, reclassified as A12)
+are fixed, batched into six commits as originally planned, each verified with
+an empty golden diff. Two items surfaced real, worth-recording surprises while
+being implemented — B2's "obvious" pandas-suggested fix (`frame.T.groupby(...)`)
+turned out to be dtype-unsafe on this codebase's mixed-type frames, and fixing
+B3 in `base.py` uncovered a genuine `NameError`-in-waiting (a closure
+referencing `logger` before it was assigned in the enclosing scope, never
+triggered because nothing had used it) — see each item below.
 
-| # | Item | Location |
-|---|---|---|
-| B1 | Fake progress loop — `for i in range(1, total+1): print(...)` iterates doing nothing but I/O | `steps/aggregate.py:107–111` |
-| B2 | `groupby(level=0, axis=1)` — FutureWarning on pandas 2.2, **removed** in pandas 3 | `steps/base.py:96` |
-| B3 | Silent `except: pass` / `except Exception: pass` — add specific types and a `logger.debug` | `AstroBinUpload.py:278`; `extractor.py:212,223,239`; `geocode.py:175,205`; `reports.py:44` |
-| B4 | `inspect.stack()` runs on **every log record** — walks and reads source for every frame; also `%(lineno)d` reports the logging call site, not the resolved frame. Replace with `%(funcName)s` | `AstroBinUpload.py:100–131` |
-| B5 | Worker logging is fork-only: `getLogger("AstroBinV2")` in a spawned process has no handlers, so all per-file parse errors vanish on macOS/Windows | `extractor.py:110` |
-| B6 | Dead code — unused `Nominatim` import; `[secret]` plumbed through `AppConfig` but never read (the light-pollution API is documented, never implemented); `pipeline.py` is an empty version-handshake stub; unused `Path`, `numpy`, `Tuple`, `ConfigSections` imports | `geocode.py:20`; `loader.py:75`; `pipeline.py`; various |
-| B7 | `requirements.txt` is a raw `pip freeze` — matplotlib, bs4, jupyter, ipython, requests, PyYAML, debugpy are not used. Replace with real deps (`astropy`, `pandas`, `numpy`, `configobj`, `geopy`) plus a separate lock file | `requirements.txt` |
-| B8 | `__version__` duplicated across 14 files; `verify_engine_integrity` trips on any partial edit. Collapse to one `_version.py` imported everywhere | all modules |
-| B9 | Test suite asserts `'2.0.2'` vs actual `'2.0.3'` → fails; pytest not installed in the venv | `tests/test_imports.py:47` |
-| B10 | No validation that input paths exist or are readable before the pipeline runs | `AstroBinUpload.py:188` |
-| B11 | Magic numbers → named constants with provenance comments: 5 h session gap, 0.001° cluster radius, 0.0001 EGAIN tolerance, 206.265 arcsec conversion, `FWHM = HFR × 2` | `aggregate.py:57`, `geocode.py:65`, `calibration.py:39`, `optical.py:70,77` |
-| B12 | Exporter hardcodes `'imagetyp'` instead of the constant, and `acq_source[list(mapping.keys())]` raises a bare `KeyError` if any column is absent | `exporter.py:60,96` |
-| ~~B13~~ | *Moved to **A12** — vectorising this step changes rounding and therefore changes output. It cannot be held to an empty golden diff.* | `steps/optical.py:85–89` |
-| B14 | Version drift in docs — `PROGRAM_OVERVIEW.md` and every module docstring still say v2.0.2 | repo-wide |
-| B15 | Remove the `[secret]` section from the shipped example rather than leaving an unused credential slot as an attractive nuisance. (No real key is committed: `config.ini` is correctly gitignored and holds only a placeholder.) | `config.ini.example:38` |
+| # | Item | Location | Status |
+|---|---|---|---|
+| B1 | Fake progress loop — `for i in range(1, total+1): print(...)` iterates doing nothing but I/O | `steps/aggregate.py:107–111` | done |
+| B2 | `groupby(level=0, axis=1)` — FutureWarning on pandas 2.2, **removed** in pandas 3 | `steps/base.py:96` | done — the stdlib-suggested `.T.groupby(...).T` replacement was dtype-unsafe here (upcasts every column to object on a mixed-type frame, reproducing A5's bug at a new site); replaced with a per-duplicate-group coalesce instead, verified with `.equals()` |
+| B3 | Silent `except: pass` / `except Exception: pass` — add specific types and a `logger.debug` | `AstroBinUpload.py:278`; `extractor.py:212,223,239`; `geocode.py:175,205`; `reports.py:44` | done — plus 5 more found in `base.py`/`calibration.py` not in this original location list; fixing `base.py`'s uncovered a real latent `NameError` (a closure used `logger` before its enclosing-scope assignment) |
+| B4 | `inspect.stack()` runs on **every log record** — walks and reads source for every frame; also `%(lineno)d` reports the logging call site, not the resolved frame. Replace with `%(funcName)s` | `AstroBinUpload.py:100–131` | done — the `%(lineno)d` half of this claim didn't hold up on inspection (it's captured before any Filter runs, so was never actually affected); corrected while fixing |
+| B5 | Worker logging is fork-only: `getLogger("AstroBinV2")` in a spawned process has no handlers, so all per-file parse errors vanish on macOS/Windows | `extractor.py:110` | done — added a `ProcessPoolExecutor` initializer; verified live against SH2 101 (2587 DEBUG lines correctly attributed) |
+| B6 | Dead code — unused `Nominatim` import; `[secret]` plumbed through `AppConfig` but never read (the light-pollution API is documented, never implemented); `pipeline.py` is an empty version-handshake stub; unused `Path`, `numpy`, `Tuple`, `ConfigSections` imports | `geocode.py:20`; `loader.py:75`; `pipeline.py`; various | done — ran pyflakes across the whole codebase to find every instance definitively rather than continuing to spot them incidentally |
+| B7 | `requirements.txt` is a raw `pip freeze` — matplotlib, bs4, jupyter, ipython, requests, PyYAML, debugpy are not used. Replace with real deps (`astropy`, `pandas`, `numpy`, `configobj`, `geopy`) plus a separate lock file | `requirements.txt` | done — trimmed to `astropy`, `pandas`, `numpy`, `configobj`; `geopy` dropped too, since A3/A4's haversine fix made it a non-dependency |
+| B8 | `__version__` duplicated across 14 files; `verify_engine_integrity` trips on any partial edit. Collapse to one `_version.py` imported everywhere | all modules | done in P0 phase |
+| B9 | Test suite asserts `'2.0.2'` vs actual `'2.0.3'` → fails; pytest not installed in the venv | `tests/test_imports.py:47` | done in P0 phase |
+| B10 | No validation that input paths exist or are readable before the pipeline runs | `AstroBinUpload.py:188` | done — verified a bad path now fails immediately with exit 1 and a clear message |
+| B11 | Magic numbers → named constants with provenance comments: 5 h session gap, 0.001° cluster radius, 0.0001 EGAIN tolerance, 206.265 arcsec conversion, `FWHM = HFR × 2` | `aggregate.py:57`, `geocode.py:65`, `calibration.py:39`, `optical.py:70,77` | done — cluster radius was already named as part of A3/A4 |
+| B12 | Exporter hardcodes `'imagetyp'` instead of the constant, and `acq_source[list(mapping.keys())]` raises a bare `KeyError` if any column is absent | `exporter.py:60,96` | done |
+| ~~B13~~ | *Moved to **A12** — vectorising this step changes rounding and therefore changes output. It cannot be held to an empty golden diff.* | `steps/optical.py:85–89` | done as A12 |
+| B14 | Version drift in docs — `PROGRAM_OVERVIEW.md` and every module docstring still say v2.0.2 | repo-wide | done — `CHANGELOG.md`/`ReleaseNotes.md` deliberately left untouched (historical record) |
+| B15 | Remove the `[secret]` section from the shipped example rather than leaving an unused credential slot as an attractive nuisance. (No real key is committed: `config.ini` is correctly gitignored and holds only a placeholder.) | `config.ini.example:38` | done — also removed from the auto-generated template in `loader.py`; the user's own real `config.ini` left untouched |
 
 ---
 
@@ -575,10 +581,15 @@ A10 · A11  calibration semantics       ← resolved per user decision   [done, 
 A12  vectorize OpticalParameterStep    ← highest-rigor verification:  [done, 6b32663]
                                           772/772 real frames match
  │
-B1–B15 (less B13)                      ← batched; golden diff must be empty
+B1–B15 (less B13)                      ← batched, 6 commits            [done, 760f0a5..94360e6]
+                                          golden diff empty throughout
  │
-tag v2.1.0                             ← parity contract for the Rust port
+tag v2.1.0                             ← parity contract for the Rust port    [remaining]
 ```
+
+**All of P0, Bucket A, and Bucket B are complete.** The only remaining step is
+tagging `v2.1.0`, which becomes the parity contract `RUST_PORT_PLAN.md` is
+written against.
 
 Rationale for the two blockers: B8 first because the original
 `verify_engine_integrity` aborted the program on any version mismatch, which
