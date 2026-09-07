@@ -469,8 +469,10 @@ A9   determinism                       ← blocks meaningful diffs     [done, 4f
 A2   source_path in extractor          ← changes fixture schema      [done, 53ffb42]
 A13  IMAGETYP master-label collapse    ← found live on SH2 101,      [done, a927727]
      (+ its reports.py knock-on)         not in either fixture
+A1   dedup regex over-truncation       ← anchored, vocab from real   [done, ff3d19b]
+                                          WBPP output (SH2 101)
  │
-A1 · A3 · A4 · A5 · A6 · A7 · A8 · A12 ← one commit + attributed diff each
+A3 · A4 · A5 · A6 · A7 · A8 · A12      ← one commit + attributed diff each
  │
 A10 · A11  calibration semantics       ← awaits your decision; resolve together
  │
