@@ -89,6 +89,18 @@ Only once step 6 goes green on the current code does the rest of this plan begin
 
 ## Bucket A — defects that change output
 
+**Status: complete.** All thirteen items (A1–A13, including A13, found live
+during validation and not in the original plan) are fixed, each in its own
+commit with its own verification. Roughly half turned out, on rigorous
+re-checking against the real pipeline rather than the code-reading-only
+original audit, to describe a real mechanism but not a currently-reachable
+bug (A5, A7's HISTORY half, A8) — those are noted and fixed defensively
+rather than corrected as regressions, since there was no live behaviour to
+compare against. The other half were proven live, several only visible once
+tested against a second real target directory (SH2 101) rather than the
+single committed fixture: A1, A3/A4, A6, A10/A11, A13. See each item below
+for what was actually verified and how.
+
 These are the real bugs. Each **must** get its own commit with its own attributed
 golden diff: every changed byte traced to a named fix, anything else is a
 regression. Do not batch these.
@@ -560,8 +572,8 @@ A8   default-injection ordering        ← not reachable on real data; [done, 78
                                           fixed defensively anyway
 A10 · A11  calibration semantics       ← resolved per user decision   [done, 00cb110]
                                           A11 proven live once isolated
- │
-A12                                     ← changes output; needs care
+A12  vectorize OpticalParameterStep    ← highest-rigor verification:  [done, 6b32663]
+                                          772/772 real frames match
  │
 B1–B15 (less B13)                      ← batched; golden diff must be empty
  │
