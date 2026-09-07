@@ -1,5 +1,23 @@
 # Rust Port Plan — `astrobin-upload`
 
+> **Revised 2026-09-07, after the Python work completed.** This plan was first
+> written against `v2.0.3`, before any remediation existed. Since then the
+> Python side shipped `v2.1.0` (Bucket A A1–A14, Bucket B B1–B15) and `v2.1.1`
+> (GitHub #3/#5/#6). What that changed here:
+>
+> - The parity target is **`v2.1.1`**, not `v2.1.0` and certainly not `v2.0.3`.
+> - `geopy` is **gone** from the Python side — `GeocodeStep` now hand-rolls a
+>   specific haversine. The Rust port must reproduce *that* formula, not reach
+>   for a crate (dependency table below, hazard 11).
+> - The FITS reader has a requirement the first draft missed entirely:
+>   **tile-compressed `.fits.fz` / `CompImageHDU`** files, where the real
+>   metadata lives on an extension, not the primary HDU.
+> - `--test` CSV ingest turns out to carry the sharpest Phase 1 parity trap —
+>   `pd.read_csv` dtype inference (new hazard 14).
+> - Config gained `[equipmentoverrides]` (v2.1.1) and the pipeline gained
+>   `NormalizeHeadersStep` Stage 3b to apply it.
+> - Hazards 3 and 8 became *resolved* questions; 10–14 are new.
+
 ## Verdict
 
 **Yes, this is possible.** There is no capability in the Python codebase that
@@ -10,12 +28,12 @@ shared-library requirements (a fully static `musl` build on Linux).
 
 Two honest caveats, stated up front rather than buried:
 
-1. **The parity target must be the *repaired* Python, frozen at a tag** — not
-   today's `v2.0.3`. Today's code is non-deterministic (`REMEDIATION_PLAN.md`
-   A9: `as_completed` yields in completion order and `sort_values` is unstable),
-   so it does not produce a single well-defined output to be exact *against*.
-   **Done:** Bucket A/B are fixed, the corpus is regenerated, and `v2.1.0` is
-   tagged (PR #12). That tag is the contract.
+1. **The parity target must be the *repaired* Python, frozen at a tag.**
+   `v2.0.3` was non-deterministic (`REMEDIATION_PLAN.md` A9: `as_completed`
+   yields in completion order, `sort_values` was unstable), so it had no single
+   well-defined output to be exact *against*. **Settled:** Bucket A/B and the
+   issue-tracker follow-ups are all fixed and merged; the corpus is
+   regenerated; **`v2.1.1` is tagged on `main`** and is the contract.
 2. **One output block is expensive to match byte-for-byte** — the
    `pandas.DataFrame.to_string()` table appended to the bottom of the session
    summary. It is emulable, but it is the single largest risk item in the
@@ -53,8 +71,8 @@ against, and the port becomes unfalsifiable.
 | XISF via `struct` + `ElementTree` | `quick-xml` | pure Rust |
 | `configobj` | **hand-written** | see below |
 | `pandas` | plain structs + `BTreeMap` | see below |
-| `numpy` | std / `itertools` | only used for `sqrt` and masks |
-| `geopy.distance` | `geo` crate, or ~20 lines of haversine | needed by remediation A4 |
+| `numpy` | std | `radians`/`sin`/`cos`/`arcsin`/`sqrt` for haversine, boolean masks, and `mean` (**pairwise** summation — hazard 4) |
+| ~~`geopy.distance`~~ | **hand-written, matching Python exactly** | No longer a Python dependency. A3/A4 replaced it with a specific vectorized haversine (`EARTH_RADIUS_M = 6371000.0`, `2·arcsin(√a)`). Do **not** substitute the `geo` crate — it uses a different mean radius and formula family, which moves cluster boundaries. See hazard 11. |
 | `concurrent.futures.ProcessPoolExecutor` | `rayon` | threads, not processes — no GIL to escape |
 | `csv` writing | `csv` crate | |
 | `logging` | `tracing` + `tracing-subscriber` | |
@@ -71,9 +89,34 @@ touches pixel data. The FITS header format is trivial: 2880-byte blocks of
 faster than cfitsio because it stops at the first `END` and never mmaps the data
 unit.
 
-It must implement remediation A7: select the first HDU with a non-trivial
-header (not unconditionally HDU 0), and preserve **repeated** `HISTORY` and
-`COMMENT` cards, which the master sub-exposure count depends on.
+Two requirements beyond the basic format:
+
+**A7 — HDU selection.** Scan HDUs in order and take the **first whose header
+contains `IMAGETYP`**; fall back to HDU 0 if none does (which preserves
+`[defaults]` behaviour for files that legitimately lack it). Not
+unconditionally HDU 0.
+
+**Tile-compressed FITS.** This is the reason A7 exists, and the first draft of
+this plan missed it. `.fits.fz` / `CompImageHDU` files store the real metadata
+(`IMAGETYP`, `EXPOSURE`, `DATE-OBS`, …) on the **first image extension**,
+leaving the primary HDU with only `SIMPLE`/`BITPIX`/`NAXIS`/`EXTEND`. astropy
+hides this; a hand-written reader will not. In the file the compressed HDU is a
+`BINTABLE` carrying `ZIMAGE = T`, and the user keywords sit in that binary-table
+header as ordinary cards — so a reader that walks **every** HDU header
+(not just image HDUs) and applies the `IMAGETYP` rule handles it correctly.
+Do not filter HDUs by `XTENSION` type.
+
+**Repeated cards.** `HISTORY` and `COMMENT` appear many times per header and the
+master sub-exposure count (`ImageIntegration.numberOfImages`) is parsed out of
+them, so the reader must expose them as a **sequence**, not a last-write-wins
+scalar. (Note: A7's original "astropy collapses HISTORY" claim was investigated
+and *disproven* — `dict(header)['HISTORY']` yields a list-like object. The
+requirement stands for the Rust reader regardless; it just isn't a bug being
+fixed.)
+
+**Value cleanup.** After reading, every string value is stripped of surrounding
+`'` and `"` (`extractor.py:177`), and `SOURCE_PATH` is set to the **absolute**
+path — after the quote-strip, since it is not header text.
 
 ### Config: hand-write the parser
 
@@ -92,6 +135,17 @@ that handles depth-by-bracket-count, `#` comments, quoted section names, and
 comma-separated values. It must reproduce configobj's whitespace and quote
 stripping exactly, since `[override]` values feed column matching.
 
+Sections to support, and what each does:
+
+| Section | Semantics |
+|---|---|
+| `[defaults]` | Keys upper-cased with spaces stripped; injected only for columns still absent **after** case normalisation (A8). |
+| `[override]` | Keyword remap, internal key → one or more raw header keys. A comma-separated value arrives from configobj as a **native list**, not a string (A6) — the parser must produce a list either way. Unknown targets warn and no-op; they must not error. |
+| `[equipmentoverrides]` | **New in v2.1.1.** Value replacement, not keyword remap. Blank or the sentinel `None` ⇒ skip; anything else ⇒ force that literal into the column for every row, applied after default injection (`NormalizeHeadersStep` Stage 3b). |
+| `[filters]` | Filter name → AstroBin numeric code. An unmapped name passes through **as the original string**. |
+| `[sites]` | The nested `[[…]]` case above. Bare and quoted section names both occur in real configs. |
+| `[secret]` | Present in older user configs; unused by the summary/CSV path. Parse and ignore. |
+
 ### Data layer: structs, not polars
 
 Recommend `Vec<Frame>` with explicit `BTreeMap` grouping over pulling in polars.
@@ -107,15 +161,43 @@ Recommend `Vec<Frame>` with explicit `BTreeMap` grouping over pulling in polars.
 Model missing values as `Option<T>` and be deliberate at every call site about
 whether pandas would have skipped or propagated.
 
+### Pipeline order — pin it
+
+`AstroBinUpload.py:202–207`. The order is load-bearing and not the one you'd
+guess, so it is recorded here rather than re-derived:
+
+```
+1  NormalizeHeadersStep     overrides → lowercase → defaults → 3b equipment
+                            overrides → drop MASTERLIGHT → master preference
+                            → IMAGETYP normalisation → type hardening
+2  OpticalParameterStep     HFR / IMSCALE / FWHM      (before dedup!)
+3  DeduplicateStep          WBPP survivor pick
+4  CalibrationMatcherStep   gain handshake + cal counts
+5  GeocodeStep              coordinate align → cluster → site lookup
+6  AggregationStep          temporal split → groupby → filter codes
+```
+
+Two orderings worth noting because reversing them changes output: optical
+metrics are computed **before** deduplication (so on pre-dedup rows), and
+geocoding runs **after** calibration matching (so calibration frames are
+matched before their coordinates are snapped).
+
 ---
 
 ## Parity hazards, ranked
 
-> Re-validated against the landed v2.1.0 fixes on 2026-09-07. Hazards 3 and 8
-> are now *resolved questions* (the algorithm is pinned in code, not merely
-> proposed); hazard 2 gained concrete detail; hazards 10–12 are new — the
-> A1/A2, A3/A4 and A13/A14 fixes each introduced behaviour a port must match
-> that did not exist when this plan was first written.
+> Re-validated against the landed `v2.1.1` code on 2026-09-07.
+>
+> - **3 and 8** are no longer open questions — the algorithm is pinned in
+>   Python source, not merely proposed.
+> - **2** gained concrete detail on mixed-type group keys and stable sorts.
+> - **10–12** cover behaviour the A1/A2, A3/A4 and A13/A14 fixes introduced,
+>   none of which existed when this plan was first drafted.
+> - **13–14** came out of the post-completion revisit: config surface the
+>   corpus cannot see, and `pd.read_csv` dtype inference.
+>
+> 1 remains the highest-risk item and 14 is the one most likely to be
+> underestimated, because it looks like three lines of Python.
 
 ### 1. `acq_df.to_string()` appended to the summary — highest risk
 `engine/exporter.py:122`
@@ -351,6 +433,33 @@ under. Checked against the repo's live `config.ini` (2026-09-07):
 Whatever is not covered here gets a targeted Rust unit test rather than
 leaning on the byte diff.
 
+### 14. `pd.read_csv` dtype inference — the Phase 1 trap
+
+`extract_from_csv` is three lines (`extractor.py`): `pd.read_csv(path)`, then
+upper-case the column names. Those three lines carry more parity risk than the
+config parser, because **the inferred dtype of every column propagates all the
+way to the acquisition CSV**, and int-vs-float is directly visible there.
+
+Measured on `golden_tests/fixtures/sadr_raw.csv` (221 rows, 64 columns):
+
+| Column | Inferred dtype | Renders as |
+|---|---|---|
+| `GAIN`, `XBINNING`, `NUMBER` | `int64` | `100`, `1`, `1` |
+| `EGAIN`, `EXPOSURE`, `CCD-TEMP`, `FOCALLEN`, `SITELAT` | `float64` | `0.246657639741898`, `600.0`, `-10.0` |
+| `IMAGETYP`, `FILTER` | `object` | as written |
+
+63 of the 64 columns contain no nulls. That matters: pandas types an all-integer
+column `int64` **only while it has no nulls** — a single empty field promotes it
+to `float64`, and `100` becomes `100.0` in the output AstroBin consumes. This is
+the same failure surface as A5, reached through the reader rather than through
+`fillna`.
+
+So the Rust CSV reader cannot be "parse into `String` and coerce later". It must
+run pandas' inference rules per column up front — all-integer-and-no-blanks ⇒
+integer; otherwise numeric-parseable ⇒ float; otherwise string; empty ⇒ null —
+and carry that decision as the column's type for the rest of the run. Float
+formatting must round-trip (`repr`-shortest), not fixed precision.
+
 ---
 
 ## Phasing
@@ -361,7 +470,7 @@ covers.
 | Phase | Scope | Why here |
 |---|---|---|
 | **0** | Freeze the contract — **done**: `v2.1.1` tagged and on `main`, goldens regenerated. | Nothing testable without it |
-| **1** | Cargo scaffold, `clap` CLI, config parser (incl. `[equipmentoverrides]`, v2.1.1), `--test` CSV ingest **only** | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
+| **1** | Cargo scaffold, `clap` CLI, config parser (incl. `[equipmentoverrides]`, v2.1.1), `--test` CSV ingest **only** — with pandas-equivalent dtype inference (hazard 14) | Reaches end-to-end on committed fixtures without writing a single byte of FITS parsing |
 | **2** | The six pipeline steps as pure functions over `Vec<Frame>`, incl. `NormalizeHeadersStep` Stage 3b (equipment value overrides, v2.1.1) | The bulk of the logic; fully exercised by Phase 1's CSV path |
 | **3** | Exporter + `reports.py` — the byte-parity grind | Hazard 1 lives here |
 | **4** | FITS and XISF readers | The only part the CSV fixtures cannot exercise; validate against the synthetic binary fixtures from remediation P0 |
@@ -382,11 +491,18 @@ knowing in advance:
 
 | Area | ~LOC | ~Effort |
 |---|---|---|
-| Pipeline steps (Phase 2) | 1,500 | 25% |
-| Report + exporter formatting (Phase 3) | 700 | **40%** |
-| FITS + XISF readers (Phase 4) | 600 | 15% |
-| Config parser, CLI, plumbing | 700 | 10% |
-| Harness + tests | 800 | 10% |
+| Pipeline steps (Phase 2) | 1,600 | 25% |
+| Report + exporter formatting (Phase 3) | 700 | **35%** |
+| FITS + XISF readers (Phase 4) | 750 | 15% |
+| Config parser, CLI, CSV ingest, plumbing | 900 | 15% |
+| Harness + tests | 900 | 10% |
+
+Revised upward from the first draft by ~400 LOC. The additions are the
+tile-compressed FITS path (hazard/FITS section), the `[equipmentoverrides]`
+section and Stage 3b, and a real dtype-inferring CSV reader (hazard 14) in place
+of the "just read strings" the first draft implicitly assumed. Phase 3 drops
+from 40% to 35% of effort only because the denominator grew — its absolute cost
+is unchanged and it is still the single largest block.
 
 Phase 3 is 15% of the lines and 40% of the effort. That asymmetry is the single
 most important thing to plan around, and it is almost entirely hazard 1.
