@@ -28,7 +28,7 @@
         SWCREATE = Unknown package
         USEOBSDATE = False
 [override]
-        SWCREATOR = CREATOR
+        SWCREATE = CREATOR
         EXPOSURE = EXPTIME
         SITE = SITENAME
         FOCNAME = FOCUSER

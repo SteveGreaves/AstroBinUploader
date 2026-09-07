@@ -12,7 +12,21 @@ from typing import Dict, Any, List
 from configobj import ConfigObj
 import os
 from models import AppConfig
-from constants import ConfigSections
+from constants import ConfigSections, InternalColumns
+
+# The set of column names an [override] target can actually reach. Every
+# override key ends up as a raw column name (base.py's NormalizeHeadersStep
+# Stage 1: `df[internal_key] = combined_series`), which is then lowercased
+# along with every other column (Stage 3). So an override only has any
+# effect if its key, lowercased, matches a name later pipeline code reads --
+# i.e. an InternalColumns value. Anything else silently creates a phantom
+# column nothing consumes (A6 in REMEDIATION_PLAN.md: '[override]
+# SWCREATOR = CREATOR' in the shipped config -- 'swcreator', not
+# 'swcreate' -- has never done anything).
+_KNOWN_OVERRIDE_TARGETS = {
+    v.lower() for k, v in vars(InternalColumns).items()
+    if not k.startswith('_') and isinstance(v, str)
+}
 
 class ConfigLoader:
     """
@@ -139,16 +153,35 @@ class ConfigLoader:
     def _normalize_overrides(self, overrides: Dict[str, Any]) -> Dict[str, List[str]]:
         """
         Processes the [override] section for keyword remapping.
-        
-        Handles both single keyword strings and comma-separated lists, 
+
+        Handles both single keyword strings and comma-separated lists,
         ensuring they are all returned as lists of strings.
         """
         result = {}
         for k, v in overrides.items():
-            if isinstance(v, str):
+            if isinstance(v, list):
+                # ConfigObj parses a comma-separated INI value (e.g.
+                # 'SQM = AOCSKYQ, AOCSKYQU') into a native Python list
+                # *before* this method ever sees it -- this branch was
+                # previously unreachable in the isinstance(v, str) check
+                # below, so any such value fell through to the scalar
+                # branch and got str()'d whole: ["['AOCSKYQ', 'AOCSKYQU']"],
+                # a single-element list containing a Python repr that can
+                # never match a real column name. That override was
+                # therefore entirely dead (A6 in REMEDIATION_PLAN.md).
+                result[k] = [str(item).strip() for item in v]
+            elif isinstance(v, str):
                 # Split comma-separated values and strip whitespace
                 result[k] = [item.strip() for item in v.split(',')]
             else:
                 # Handle single non-string values by wrapping them in a list
                 result[k] = [str(v).strip()]
+
+            if k.lower() not in _KNOWN_OVERRIDE_TARGETS:
+                self.logger.warning(
+                    f"[override] target '{k}' does not match any recognized "
+                    f"internal column and will have no effect. Check for a "
+                    f"typo (did you mean one of: "
+                    f"{', '.join(sorted(_KNOWN_OVERRIDE_TARGETS))}?)"
+                )
         return result
