@@ -1,5 +1,44 @@
 # Release Notes - AstroBin Upload Utility
 
+## [v2.1.2] - 2026-09-08
+### Calibration section labels, and the issue tracker closed out
+
+**Fixed — calibration sections were labelled `MASTERxxx` unconditionally.** A
+session built entirely from raw `DARK`/`FLAT`/`BIAS` frames — no master frame
+anywhere in the data — still printed `MASTERDARKS:`, `MASTERFLATS:` and
+`MASTERBIAS:` as its section headers. The label now reflects what the table
+actually holds: plain `DARKS:`/`FLATS:`/`BIAS:` when every frame is raw,
+`MASTERxxx` when they really are masters, and `MASTERxxx` for a mixed table
+(a master covering one gain with raw frames surviving for another).
+
+The code carried a comment claiming this matched "v1.4.7 standards". It
+didn't — v1.4.7 labelled each section by its literal `IMAGETYP`. The
+behaviour drifted at some point and the comment kept citing a standard the
+code no longer followed.
+
+Only the header text changed. Frame counts, exposures, the acquisition CSV
+and every other line of the summary are untouched, and the raw/master
+consolidation into a single table (A13/A14) is unchanged.
+
+**Issues #9 and #10 closed after re-test.** Both concerned master calibration
+frames and were left open in v2.1.1 awaiting verification against real data:
+
+- Sub-exposure counts (`32` reported as `1`) are read correctly from WBPP's
+  `PixInsight:ProcessingHistory` property, the XISF `COMMENT`/`HISTORY`
+  keywords, and FITS `HISTORY`.
+- Two master darks at the same gain but different exposures (180 s and 600 s)
+  are reported as two rows with their own counts, not merged into one.
+
+Both were verified against constructed reproductions of the reporters' own
+figures, and cross-checked byte-for-byte against the independent Rust
+implementation. The tracker now has **zero open issues**.
+
+Note the one deferred piece from #10: the optional `[calibrationoverrides]`
+ini fallback, for masters that carry no recoverable count at all, is still
+unbuilt — see `future_work.md`.
+
+---
+
 ## [v2.1.1] - 2026-09-07
 ### GitHub Issue Follow-up
 
@@ -17,8 +56,9 @@ A short release reconciling the codebase with the open issue tracker after v2.1.
   `ROTANTANG`.
 
 Issues #11 and #4 were already resolved by v2.1.0 (deduplication regex anchor;
-`--config` flag). #9 and #10 are believed resolved by v2.1.0's master-frame
-handling and await a re-test against the reporters' data.
+`--config` flag). #9 and #10 were believed resolved by v2.1.0's master-frame
+handling and awaited a re-test against the reporters' data — that re-test was
+done in v2.1.2 and both are now closed.
 
 ---
 

@@ -1,6 +1,12 @@
 # Future Revision Notes
 
-Based on a code quality assessment of v2.0.3. The overall architecture is sound and a full rewrite is not recommended — these are targeted improvements in priority order.
+Originally written as a code-quality assessment of **v2.0.3**. Most of it has
+since been done — largely by the v2.1.0 remediation pass (`REMEDIATION_PLAN.md`,
+Bucket A/B) rather than by working through this list directly.
+
+**Status reviewed against v2.1.2 (2026-09-08).** Each item below was checked
+against the current code, not assumed from the changelog. What remains open is
+at the bottom.
 
 ---
 
@@ -14,83 +20,105 @@ Based on a code quality assessment of v2.0.3. The overall architecture is sound 
 
 ---
 
-## High Priority
+## Done
 
-### 1. Silent Exception Handlers
-Several locations swallow exceptions without logging, making user-reported bugs very hard to diagnose.
+### 1. Silent Exception Handlers — **done** (B3, v2.1.0)
+No bare `except: pass` remains. Every handler names its exception types and
+leaves at least a `logger.debug()` trace: the emergency dump
+(`AstroBinUpload.py`), XISF `ProcessingHistory` / `numberOfImages` parsing
+(`engine/extractor.py`), and `seconds_to_hms` (`engine/reports.py`) all log
+what went wrong rather than swallowing it.
 
-Locations:
-- `AstroBinUpload.py:278` — bare `except: pass` in emergency data dump
-- `engine/extractor.py:212, 223, 239` — `except Exception: pass` in XISF parsing
-- `engine/steps/geocode.py:175, 205` — bare exception handling in coordinate logic
+### 3. Input Validation — **done** (B10, v2.1.0)
+`AstroBinUpload.py` checks every directory argument with `os.path.isdir()`
+before use and exits with a clear per-path message. Previously a typo'd path
+reached `os.makedirs()` and silently manufactured an empty tree.
 
-Fix: Replace with specific exception types and at minimum a `logger.debug()` call so failures leave a trace.
+### 4. Magic Numbers — **done** (B, v2.1.0)
+All three are named constants with comments explaining their origin:
+`SESSION_GAP_HOURS = 5` (`aggregate.py`), `CLUSTER_RADIUS_M = 110.0`
+(`geocode.py`), `EGAIN_UNSET_TOLERANCE = 0.0001` (`calibration.py`).
 
-### 2. No Test Suite
-The biggest practical risk. There are no pytest tests, so regressions from future changes are invisible until a user reports them.
+### 5. GPS Clustering Algorithm — **done** (A3 + A4, v2.1.0)
+Both halves fixed. Distance is now a vectorized haversine in metres
+(`_haversine_distance_m`, `EARTH_RADIUS_M = 6371000.0`) rather than Euclidean
+on degrees, and clustering is a stable greedy single-linkage pass, so an
+already-clustered point can no longer be stolen by a later seed. Note the
+suggestion in the original item — "or simply use `geopy.distance.distance()`
+which is already a dependency" — was deliberately *not* taken: a per-row
+geopy call across thousands of frames is far slower than one vectorized
+formula, and geopy was dropped entirely (see item 7).
 
-Suggested coverage:
-- Unit tests for each pipeline step using a small synthetic DataFrame
-- A test for the XISF header parser against a known fixture file
-- A test for the GPS clustering logic with edge-case coordinates
-- An integration test that runs the full pipeline against a small set of sample FITS files
+### 6. Centralise Regex Patterns — **done** (v2.1.0)
+`constants.py` now has a `RegexPatterns` class; `WBPP_FILENAME` lives there
+and is the single definition used by the deduplication step.
 
-### 3. Input Validation
-`AstroBinUpload.py:188` expands user-supplied paths but does not verify they exist or are readable before passing them into the pipeline. A clear error message at the entry point is better than a cryptic pandas crash three steps later.
+### 7. Dead Code (`geopy`) — **done** (A4 + B7, v2.1.0)
+`geopy` is no longer imported anywhere and has been removed from
+`requirements.txt`, which was itself trimmed from a 50-package `pip freeze` to
+the four packages actually imported.
 
----
+### 9. Logging Infrastructure — **done** (B4, v2.1.0)
+The `FunctionNameFilter` that walked `inspect.stack()` on every log record is
+gone, replaced by the standard `%(funcName)s` in the format string.
 
-## Medium Priority
+### 2. Test Suite — **substantially done, not to the shape originally suggested**
+The original concern ("regressions from future changes are invisible until a
+user reports them") is addressed, but by a different route than the four
+bullets proposed:
 
-### 4. Magic Numbers
-Undocumented thresholds scattered through the code. They should be named constants with a comment explaining their origin.
+- `golden_tests/run_golden.py` replays committed fixtures through the whole
+  pipeline and byte-compares against blessed references — the integration test
+  the item asked for, using captured raw-header CSVs rather than sample FITS
+  files (the `--test` path was verified byte-identical to a real disk scan, so
+  the substitution is faithful).
+- `tests/` holds a small pytest suite (config overrides, import sanity).
+- Heaviest coverage now lives *outside* this repo: the Rust port
+  (`AstroBinUploaderRust`) runs four differential harnesses against this code
+  on every push, comparing pipeline state cell by cell and both output
+  artifacts byte for byte, over four CSV fixtures and three binary
+  FITS/XISF scenarios.
 
-| Location | Value | Meaning |
-|---|---|---|
-| `engine/steps/aggregate.py:57` | `hours=5` | Gap between observations that signals a new session |
-| `engine/steps/geocode.py:65` | `0.001` | GPS cluster radius in degrees (~110m at equator) |
-| `engine/steps/calibration.py:39` | `0.0001` | Tolerance for EGAIN vs GAIN handshake |
-
-### 5. GPS Clustering Algorithm
-`engine/steps/geocode.py:62-85` uses a greedy Euclidean distance approach. Two issues:
-
-- **Order-dependent**: which point becomes the cluster centre depends on DataFrame row order
-- **Inaccurate at high latitudes**: Euclidean approximation breaks down; Haversine distance should be used
-
-Replacement options: DBSCAN with Haversine metric (scikit-learn has this built in), or simply use `geopy.distance.distance()` which is already a dependency.
-
-### 6. Centralise Regex Patterns
-Filename-parsing regexes are duplicated between `engine/extractor.py` and `engine/steps/base.py`. Move them to `constants.py` under a `RegexPatterns` class so any future change is made in one place.
-
-### 7. Dead Code
-`geopy` is listed in `requirements.txt` and imported but the `Nominatim` geocoder is never actually called in the current code. Verify and remove the dead import.
-
-### 8. Boolean Parsing in Config Loader
-`engine/loader.py:66` only accepts lowercase 'true' for the USEOBSDATE flag. Should also accept '1' and 'yes' to match normal user expectations.
-
----
-
-## Low Priority
-
-### 9. Logging Infrastructure
-`AstroBinUpload.py:100-131` contains a FunctionNameFilter that walks the call stack via `inspect.stack()` on every log record. This is slow and fragile. Standard %(funcName)s in the log format string achieves the same result without the overhead.
-
-### 10. Reports Module Coupling
-`engine/reports.py` mixes data preparation with string formatting in the same functions. If a second output format (JSON, HTML) is ever needed, these would need to be separated.
-
-### 11. ConfigObj Dependency
-`configobj` is less actively maintained than Python's built-in `configparser`. A future revision could migrate to `configparser` or to TOML, which has built-in support from Python 3.11+.
+Still missing from this repo's own suite: per-step unit tests against synthetic
+DataFrames, and a direct XISF-header-parser test against a fixture file.
 
 ---
 
-## Where to Start If Doing a Full Revision
+## Still Open
 
-1. Write the test suite first against the existing code — this gives you a safety net
-2. Fix silent exception handlers — low effort, high diagnostic value
-3. Add input validation at `AstroBinUpload.py` entry point
-4. Replace the GPS clustering with a Haversine-based approach
-5. Centralise constants and regex patterns
-6. Tackle the reporting module separation last, as it carries the most rewrite risk
+### 8. Boolean Parsing in Config Loader — **open**
+`engine/loader.py` still accepts only `'true'` (case-insensitively) for
+`USEOBSDATE`; `'1'` and `'yes'` are read as false. Low impact — the generated
+template writes `True`/`False` — but it would surprise a user who typed `yes`.
+
+### 10. Reports Module Coupling — **open**
+`engine/reports.py` still mixes aggregation with string formatting in the same
+functions. Only worth doing if a second output format (JSON, HTML) is actually
+wanted; it carries real rewrite risk and every output byte is currently pinned
+by the golden references and the Rust differential harness.
+
+### 11. ConfigObj Dependency — **open**
+Still `configobj`. Migrating to `configparser` or TOML would be a breaking
+change to every user's `config.ini`, so it needs a deliberate migration path,
+not just a swap. Note the format genuinely uses configobj features
+(bracket-depth nesting for `[sites]`, comma-implies-list, no type coercion)
+that `configparser` does not provide.
+
+### `[calibrationoverrides]` ini fallback — **open** (from issue #10)
+The counting bug behind issue #10 is fixed — sub-exposure counts are read from
+WBPP's `PixInsight:ProcessingHistory` property, the XISF `COMMENT`/`HISTORY`
+keywords, and FITS `HISTORY`. The reporter's *secondary* suggestion — a
+config-level fallback for when a master carries no count at all, e.g.
+
+```ini
+[calibrationoverrides]
+BiasCount = 32
+DarksCount = 32
+FlatsCount = 32
+```
+
+— was never built. Worth doing only if a real master frame turns up with no
+recoverable count.
 
 ---
 
@@ -98,9 +126,7 @@ Filename-parsing regexes are duplicated between `engine/extractor.py` and `engin
 
 | File | Notes |
 |---|---|
-| `engine/extractor.py` | XISF parsing has the most silent failures |
-| `engine/steps/geocode.py` | GPS clustering needs the most algorithmic improvement |
-| `engine/steps/base.py` | Largest single step; candidate for splitting |
-| `engine/reports.py` | Tightly coupled; good candidate for a data/presentation split |
-| `constants.py` | Already well-structured; add `RegexPatterns` class here |
-
+| `engine/reports.py` | Tightly coupled; the remaining data/presentation split candidate |
+| `engine/loader.py` | Boolean parsing (item 8); the configobj migration (item 11) starts here |
+| `engine/steps/base.py` | Still the largest single step; candidate for splitting |
+| `constants.py` | Well-structured; `RegexPatterns` now lives here |

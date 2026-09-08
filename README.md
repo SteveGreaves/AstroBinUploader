@@ -1,4 +1,4 @@
-# AstroBin Upload Utility v2.1.1
+# AstroBin Upload Utility v2.1.2
 Scripts to process FITS/XISF headers and create Astrobin data acquisition file and summary text.
 
 Usage:
@@ -17,6 +17,7 @@ Usage:
         - [[secrets]](#secrets)
         - [[sites]](#sites)
         - [[override]](#override) 
+        - [[equipmentoverrides]](#equipmentoverrides)
         - [Editing the initial config.ini](#editing-the-initial-configini)
 - [Running the Script](#running-the-script)
     - [Initialization (no arguments)](#initialization-no-arguments-are-passed)
@@ -105,14 +106,12 @@ To install this script, follow these steps:
 
 2. Clone or download the repository from my [GitHub repository](https://github.com/SteveGreaves/AstroBinUploader)
 
-3. Ensure the following files are in the new directory:
-    - AstroBinUpload.py
-    - utils.py
-    - config_functions.py
-    - headers_functions.py
-    - processing_functions.py
-    - sites_functions.py
-    - requirements.txt
+3. Ensure the following are in the new directory:
+    - `AstroBinUpload.py` — entry point
+    - `constants.py`, `models.py`, `_version.py`
+    - `engine/` — the pipeline package (`loader.py`, `extractor.py`,
+      `processor.py`, `exporter.py`, `reports.py`, and `engine/steps/`)
+    - `requirements.txt`
 
 4. To install the required python libraries, navigate to the new directory and run the following command:   
 
@@ -129,7 +128,7 @@ If you run the script when the config.ini file exists and pass no arguments, an 
 
 ### **Using Alternative Configuration Files**
 
-Version 2.1.1 allows you to specify a custom configuration file using the `--config` (or `-c`) flag. 
+Version 2.1.1 and later allow you to specify a custom configuration file using the `--config` (or `-c`) flag. 
 
     python3 AstroBinUpload.py "/path/to/my/data" --config my_remote_setup.ini
 
@@ -148,14 +147,30 @@ The data in the [defaults] section can be modified by the user. If the script ca
 ### **[filters]**
 The filter section holds the filter name to AstroBin code mappings. The filter names and codes can be modified here.
 
-### **[secrets]**
-The secret section holds:
-1. The sky quality API keys and API endpoint required by the script to b able to obtain values of Bortle and SQM for the site location. Only the API key is to be edited. If there is no valid API key the values of Bortle and SQM are taken from [defaults][BORTLE] and [defaults][SQM] in the config.ini file
+### **[secrets]** — removed in v2.1.0
 
-2. User email address. This is used as part of an information string sent to the reverse geocoding API, which is used to recover the site address. Unique site latitude and longitude values extracted from the headers are passed to the API to generate the site address. Your email address is passed to the API as courtesy, so the provider can see who is using their API. If the API request fails the site location information is taken from [defaults][SITE], [defaults][SITELAT] and [defaults][SITELONG] in the config.ini file.
+**This section is no longer used and can be deleted from your `config.ini`.**
+
+Earlier versions called two external APIs: lightpollutionmap.info for Bortle
+and SQM, and Nominatim reverse geocoding for the site address. Neither is
+called any more — the utility is fully offline. Site information now comes
+from the `[sites]` section (matched by coordinate), falling back to
+`[defaults]` (`SITE`, `SITELAT`, `SITELONG`, `BORTLE`, `SQM`) when no site
+matches. Nothing reads an API key or an email address, so leaving the old
+section in place is harmless but pointless.
 
 ### **[sites]**
-The [sites] section holds historic site information found by the script. When a script is run it first looks here to collect site information. Only if a site found in the headers does not exist does it access the external API's. The script automatically updates this section if a new site is found. The user does not usually have to edit this section, but remote site information can be added here if the script cannot access the API.
+The `[sites]` section is your own list of known observing sites. The utility
+clusters the GPS coordinates found in your headers (drifting readings within
+about 110 m are treated as one site) and looks the resulting position up here.
+A match supplies the site's name, Bortle and SQM; no match falls back to
+`[defaults]`.
+
+**You maintain this section yourself.** Earlier versions appended new sites
+automatically after a reverse-geocoding call; since v2.1.0 there are no API
+calls, so add a site by copying the block format shown below and filling in
+the coordinates your headers actually carry (`--debug` writes them to
+`debug_step_00_RawHeaders.csv` if you need to look them up).
 
 ### **[override]**
 
@@ -171,6 +186,29 @@ FOCTEMP = AOCAMBT
 ```
 
 In this example, the script will first look for `AOCSKYQ`, and then `AOCSKYQU` if the first is not found, to populate the internal `SQM` variable. The script prioritizes these manual overrides over standard defaults. Once a mapping is successful, the source hardware column is pruned to ensure a clean data hand-off to the aggregator.
+
+### **[equipmentoverrides]**
+
+New in v2.1.1. Where `[override]` remaps a *keyword* (read `AOCAMBT` and call
+it `FOCTEMP`), `[equipmentoverrides]` replaces a *value* — it forces a literal
+string into a column for every frame, whatever the header actually said.
+
+The case it exists for: N.I.N.A. writes `EAF` for a ZWO focuser, and you want
+the AstroBin summary to say `ZWO EAF`.
+
+```ini
+[equipmentoverrides]
+        INSTRUME = None
+        TELESCOP = None
+        FOCNAME = ZWO EAF
+        FWHEEL = None
+        ROTNAME = None
+```
+
+`None` (the generated default) or an empty value means "leave whatever the
+header carried". Anything else is forced into that column for every row,
+applied immediately after default injection. It works on any column, not just
+the five equipment fields the generated template lists.
 
 It is advisable to back up you config.ini file regularly. 
 
@@ -198,7 +236,8 @@ If you have a CCD camera, leave these values as they are. If you have a CMOS cam
         TELESCOP = None
         FOCNAME = None
         FWHEEL = None
-        ROTATOR = None
+        ROTNAME = None
+        ROTANTANG = 0
         XPIXSZ = 1
         CCD-TEMP = -10
         FOCALLEN = 540
@@ -257,17 +296,18 @@ Modify the [filters] section to reflect your imaging set up, see [Astrobin Filte
 <div style="page-break-after: always;"></div>
 
 
-```
-[secret]
-        #API key        API endpoint
-        xxxxxxxxxxxxx = https://www.lightpollutionmap.info/QueryRaster/
-        EMAIL_ADDRESS = id@provider.com
-```
-If you wish to automatically generate an address and sky quality information for the observation site enter the [Sky Quality API key](#accessing-sky-quality-data) and your [email address](#reverse-geocoding) here. If you don't wish to do this or if the API calls fail the script falls back to site parameters found in the [defaults] section 
+A `[secret]` section appears in configs generated by v2.0.x and earlier. It
+held a sky-quality API key and an email address for reverse geocoding. **It is
+no longer read** — since v2.1.0 the utility makes no network calls at all —
+and can be deleted.
+
 ```
 [sites]
 ```
-If the script is run and a new site identified the script will update the [sites] section with the new site information. For example after one run my home location was added to the [sites] as shown below:
+Site information comes from the `[sites]` section, which you maintain by hand
+(earlier versions appended to it automatically after a geocoding call). A site
+block looks like this — the coordinates are matched against the clustered
+positions found in your headers:
 
 ```
 [sites]
@@ -318,7 +358,7 @@ All directory arguments are assumed to belong to one target. Again the first dir
 
 ### **Advanced Debugging and Testing**
 
-Version 2.1.1 provides a robust diagnostic system designed for high-precision troubleshooting and workflow verification.
+Version 2.1.1 and later provide a robust diagnostic system designed for high-precision troubleshooting and workflow verification.
 
 #### **1. Generating Debug Data**
 To inspect the internal state of your metadata as it flows through the pipeline, run the utility with the `--debug` flag:
@@ -570,26 +610,39 @@ https://app.astrobin.com/equipment/explorer/filter/4663/astronomik-h-alpha-ccd-6
 
 From this URL, the AstroBin code for this Astronomik 2-inch H-alpha CCD 6nm filter is 4663.
 
-## **Accessing sky quality data** 
+## **Sky quality (Bortle and SQM)**
 
-The artificial_brightness of the sky at a given latitude and longitude is obtained from the excellent web resource https://www.lightpollutionmap.info. This can be by done by visiting the website and entering the latitude and longitude of the observation site and obtaining the parameters Bortle and SQM. These parameters can then be entered into the [defaults] section of the cofig.ini file. It can also be done programmatically by the code. To do this you need to place an API_KEY and API_ENDPOINT for the service in the secret.csv file. The only API_ENDPOINT supported currently is https://www.lightpollutionmap.info/QueryRaster/. You will have to apply to Jurij Stare, the website owner, for an API key. Jurij's email address is starej@t-2.net. The approach I suggest is: donate a small amount in support of his website. He will send you a thank you e-mail and in response ask for an API key.
+**As of v2.1.0 the utility makes no network calls.** Bortle and SQM come from
+your `config.ini` — either from a matching entry in `[sites]`, or from
+`[defaults]` when no site matches.
 
-[secrets] section format relating to the sky quality API is shown below:
+To fill those values in, look your observing site up by latitude and longitude
+at the excellent <https://www.lightpollutionmap.info> and copy the Bortle and
+SQM figures it reports into the relevant section. Earlier versions could fetch
+this automatically with an API key held in `[secret]`; that path was removed,
+along with the section.
 
-| **API Key** | **API Endpoint**|
-| ----------- | --------------- | 
-| **************** | https://www.lightpollutionmap.info/QueryRaster/ |
+## **Site names (formerly reverse geocoding)**
 
-## **Reverse Geocoding**
-The script process the latitude and longitudes found in the header files and uses the [Geopy Nomintim library](https://geopy.readthedocs.io/en/stable/#nominatim), which in turn, uses the [Open Street Map](https://www.openstreetmap.org/about) API. As a courtesy the script provides the email address of the user accessing the API. To enable this the [secrets][EMAIL_ADDRESS] is used and should be set to your email address. Reverse geocoding is required to be able to produce accurate summary information with multi-site data. Without it all data is aggregated under the default site. It does not affect the Astrobin.csv output as this is aggregated across sites for any target.
+Also removed in v2.1.0. Earlier versions passed each site's coordinates to the
+Nominatim / OpenStreetMap API (via `geopy`) to turn them into a postal
+address, using an email address from `[secret]` as the courtesy identifier.
+`geopy` is no longer a dependency at all.
 
-[secrets] section format relating reverse geocoding API is shown below:
+Site naming is now entirely local, and works like this:
 
-| **API Key** | **API Endpoint**|
-| ----------- | --------------- | 
-| EMAIL_ADDRESS | id@provider.com |
+1. Coordinates from every frame's headers are clustered — readings within
+   about 110 m of each other are treated as one physical site, which absorbs
+   ordinary GPS drift across sessions.
+2. Each cluster's centroid is looked up in `[sites]`. A match supplies that
+   site's name, Bortle and SQM.
+3. No match falls back to `[defaults]` (`SITE`, `SITELAT`, `SITELONG`,
+   `BORTLE`, `SQM`).
 
-Set the EMAIL_ADDRESS to your email. If the API call fails then the [default] site information is used 
+Multi-site sessions therefore still report per-site correctly, provided each
+site has an entry in `[sites]`. Add one by hand using the format shown in the
+config walkthrough above — a full postal address makes the nicest summary
+heading, but any label works.
 
 ## **FWHM Values**
 

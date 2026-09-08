@@ -25,6 +25,33 @@ Found while validating the Rust port against real, unstructured data.
   all and is unaffected; `sh2101_calib` is all-raw and its three
   calibration sections now correctly read `FLATS:` / `BIAS:` / `DARKS:`.
 
+### Closed
+- **#9** and **#10** — the last two open issues, both about master
+  calibration frames, held open since v2.1.0 pending a re-test against real
+  data. The reporters' data was never available, so both were reproduced
+  from the figures in the reports themselves and verified:
+  - sub-exposure counts read correctly from WBPP's
+    `PixInsight:ProcessingHistory` property, the XISF `COMMENT`/`HISTORY`
+    keywords and FITS `HISTORY` — not the `1` originally reported;
+  - two master darks at one gain but different exposures (180 s / 600 s)
+    report as two rows with their own counts, not one merged row.
+
+  Both cross-checked byte-for-byte against the independent Rust
+  implementation. The tracker now has zero open issues. The optional
+  `[calibrationoverrides]` ini fallback suggested in #10 remains unbuilt and
+  is tracked in `future_work.md`.
+
+### Documentation
+- `README.md` corrected against the current code: the installation list named
+  modules gone since v2.0 (`utils.py`, `config_functions.py`, …); `[secrets]`
+  and both API reference sections still described network calls removed in
+  v2.1.0 (the utility has been fully offline since); `[sites]` claimed to
+  update itself automatically, which stopped when those calls went; the config
+  walkthrough still seeded the stale `ROTATOR` key fixed in v2.1.1; and
+  `[equipmentoverrides]` was undocumented despite shipping in v2.1.1.
+- `future_work.md` reviewed item by item against the current code — 7 of its
+  11 items are done, 1 partly; the rest are marked open with what remains.
+
 ## [2.1.1] - 2026-09-07
 Follow-up to v2.1.0, closing the loop with the GitHub issue tracker.
 

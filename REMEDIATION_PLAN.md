@@ -673,6 +673,22 @@ explanatory comments; PR #8 closed as superseded by the v2.0.1 `--config`
 implementation; PR #13 closed as superseded. #9 and #10 left open pending a
 re-test against the reporter's data.
 
-**Remaining**: #9 and #10 need a re-test on `v2.1.0` against the reporter's
-data before closing; the `[calibrationoverrides]` ini fallback floated in #10
-is still an open `enhancement`. #3, #5, #6 are done (this session).
+**Closed out 2026-09-08 (v2.1.2).** #9 and #10 re-tested and closed. The
+reporter's data was never available, so both were reproduced from the figures
+in the reports themselves:
+
+- **#10 / #9 (counting)** — a real WBPP master using the
+  `PixInsight:ProcessingHistory` property reads back with its true
+  sub-exposure count, not `1`. Covered continuously by the Rust port's
+  `check_readers.py` against this code.
+- **#9 (merging)** — two master darks at one gain and two exposures (180 s /
+  600 s, 32 and 24 subs, the reporter's own numbers) produce two rows with
+  their own counts and exposures, not one merged row.
+
+Both were cross-checked byte-for-byte against the independent Rust
+implementation. **The tracker now has zero open issues.**
+
+**Remaining**: the `[calibrationoverrides]` ini fallback floated in #10 is
+still unbuilt and is tracked in `future_work.md` rather than on the tracker —
+it only matters for a master carrying no recoverable count at all, which no
+observed file does.

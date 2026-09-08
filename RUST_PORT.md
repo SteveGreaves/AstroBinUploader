@@ -19,5 +19,14 @@ references.
 **If you change output behaviour here and re-bless, re-copy the corpus into the
 Rust repository's `parity/` directory and update its `parity/CORPUS.md`.**
 
-The parity contract there names Python **v2.1.1** specifically, so a release
-that changes output is also a decision to move that target.
+The parity contract there names a specific Python version — currently
+**v2.1.2** — so a release that changes output is also a decision to move that
+target. `parity/check_steps.py` enforces it: the harness refuses to run
+against a checkout at any other version, rather than silently comparing
+against the wrong baseline.
+
+**Status:** the port is functionally complete. All six phases of its
+`PORT_PLAN.md` are done — byte-identical output to this code across four CSV
+fixtures and three binary FITS/XISF scenarios, built and tested for five
+platforms, with a differential harness re-verifying parity against this
+repository on every push.
