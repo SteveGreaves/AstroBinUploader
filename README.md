@@ -542,9 +542,9 @@ If `pip` is not recognized, ensure Python is added to your System PATH during in
 * **Missing Keywords**: If the script cannot find specific equipment or location data in your file headers, it will automatically fall back to the values defined in the `[defaults]` section of your `config.ini`.
 * **Non-Standard Keywords**: If your capture software uses unique names for standard data, use the `[override]` section in `config.ini` to map them (e.g., mapping `CAMERA_MODEL` to `INSTRUME`).
 
-### **Sky Quality and Geocoding Failures**
-* **API Errors**: If the script cannot connect to the sky quality or geocoding services, it will default to the `SITE`, `SITELAT`, and `SITELONG` values provided in `config.ini`.
-* **Verification**: Ensure your email address is correctly entered in the `[secrets]` section to allow for successful reverse geocoding requests.
+### **Sky Quality and Site Naming**
+* **No network calls**: since v2.1.0 the program contacts no external service. Bortle and SQM come from a matching `[sites]` entry, or from `[defaults]` when no site matches — see [Sky quality](#sky-quality) and [Site names](#site-names-formerly-reverse-geocoding) below.
+* **Unexpected site name**: site naming is local and coordinate-clustered. If a session is attributed to the wrong site, check that its `[sites]` latitude and longitude match the frames' headers.
 
 <div style="page-break-after: always;"></div>
 

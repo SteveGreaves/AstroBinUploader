@@ -171,6 +171,15 @@ tests/
 GEMINI.md
 MEMORY.md
 
+# Editor settings
+.vscode/
+
+# Development working notes -- kept local, not repo content
+SESSION.md
+SESSION.old.md
+REMEDIATION_PLAN.md
+RUST_PORT.md
+
 # golden_tests/ IS tracked (see REMEDIATION_PLAN.md P0): it holds the
 # committed fixture corpus and reference outputs that make regression
 # testing possible without machine-specific data. Only its run-scratch
