@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.1.2] - 2026-09-08
+Found while validating the Rust port against real, unstructured data.
+
+### Fixed
+- Every calibration section in the session summary was labelled `MASTERxxx`
+  unconditionally — a raw, uncalibrated `DARK`/`FLAT`/`BIAS` session showed
+  `MASTERDARKS:`/`MASTERFLATS:`/`MASTERBIAS:` even with no master frame
+  anywhere in the data. The code's own comment claimed this matched
+  "v1.4.7 standards"; it didn't — v1.4.7's `process_image_type`
+  (`utils.py`) labelled each section by its literal `IMAGETYP`, e.g. plain
+  `DARK:` for raw darks and `MASTERDARK:` only for genuine masters. That
+  behaviour was lost sometime between v1.4.7 and this codebase while the
+  comment kept citing it. `format_image_type_table` now derives the label
+  from what the table actually contains: plain when every row is raw,
+  `MASTERxxx` when every row is a real master, and `MASTERxxx` for a
+  genuinely mixed table (a master covering one gain, raw frames surviving
+  for another the master doesn't) — the safer thing to over-claim toward
+  when a table isn't uniform. The A13 consolidation this replaces (grouping
+  a class's raw and MASTER variants into one table) is unchanged; only the
+  header text was wrong.
+
+  Both golden references re-blessed: `sadr` has no calibration frames at
+  all and is unaffected; `sh2101_calib` is all-raw and its three
+  calibration sections now correctly read `FLATS:` / `BIAS:` / `DARKS:`.
+
 ## [2.1.1] - 2026-09-07
 Follow-up to v2.1.0, closing the loop with the GitHub issue tracker.
 

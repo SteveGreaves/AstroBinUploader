@@ -1,5 +1,5 @@
 Observation session summary
-Generated 2026-09-07 20:08:48
+Generated 2026-09-08 20:19:57
  Target: Sh2 101
 
 Site: Norton Close, Papworth Everard, South Cambridgeshire, Cambridgeshire, Cambridgeshire and Peterborough, England, CB23 3XT, United Kingdom
@@ -44,7 +44,7 @@ Observation period:
 Total LIGHT Exposure Time: 70 hrs 6 mins 0.00 secs
 
 
- MASTERFLATS:
+ FLATS:
 
  Filter     Frames   Gain       Egain           Exposure     Total Exposure 
  Blue       100      0          0.78 e/ADU      0.51 secs         0 hrs      0 mins  51.00 secs
@@ -57,7 +57,7 @@ Total LIGHT Exposure Time: 70 hrs 6 mins 0.00 secs
 Total FLAT Exposure Time: 0 hrs 9 mins 39.00 secs
 
 
- MASTERBIAS:
+ BIAS:
 
  Filter     Frames   Gain       Egain           Exposure     Total Exposure 
             100      100        0.25 e/ADU      0.00 secs         0 hrs      0 mins   0.00 secs
@@ -66,7 +66,7 @@ Total FLAT Exposure Time: 0 hrs 9 mins 39.00 secs
 Total BIAS Exposure Time: 0 hrs 0 mins 0.00 secs
 
 
- MASTERDARKS:
+ DARKS:
 
  Filter     Frames   Gain       Egain           Exposure     Total Exposure 
             50       100        0.25 e/ADU      600.00 secs       8 hrs     20 mins   0.00 secs

@@ -9,4 +9,4 @@ partial edit unrunnable, and a genuinely mixed installation fails on an API
 mismatch long before a version string is consulted.
 """
 
-__version__ = '2.1.1'
+__version__ = '2.1.2'

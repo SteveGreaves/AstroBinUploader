@@ -237,19 +237,39 @@ def format_image_type_table(group: pd.DataFrame, imagetype: str, logger: logging
             total_exposure += t_exposure_target
     else:
         # Calibration Frames: Consolidate by filter/gain/exposure (no target grouping)
-        # Normalize labels to MASTER[TYPE]S as per v1.4.7 standards
-        label_map = {
-            'DARK': 'MASTERDARKS',
-            'FLAT': 'MASTERFLATS',
-            'BIAS': 'MASTERBIAS',
-            'DARKFLAT': 'MASTERDARKFLATS',
-            'MASTERDARK': 'MASTERDARKS',
-            'MASTERFLAT': 'MASTERFLATS',
-            'MASTERBIAS': 'MASTERBIAS',
-            'MASTERDARKFLAT': 'MASTERDARKFLATS'
-        }
-        display_label = label_map.get(imagetype.upper(), f"MASTER{imagetype.upper()}S")
-        
+        #
+        # The label reflects what is actually in this table, not a blind
+        # lookup. This function's docstring cites "v1.4.7 standards", but the
+        # label_map this replaced labelled *every* calibration section
+        # MASTERxxx unconditionally -- including sessions built entirely from
+        # raw, uncalibrated DARK/FLAT/BIAS frames with no master anywhere in
+        # sight. The actual v1.4.7 code (utils.py::process_image_type)
+        # labelled each section by its literal IMAGETYP: plain "DARK:" for
+        # raw darks, "MASTERDARK:" only when the frames really were masters.
+        # That got lost somewhere between v1.4.7 and here; the comment kept
+        # citing v1.4.7 while the behaviour stopped matching it.
+        #
+        # v2.1.1 deliberately consolidates a class's raw and MASTER variants
+        # into one table (A13/the comment above, "group raw and master types
+        # together for the report layout") -- that grouping is correct and
+        # is not what this fixes. Only the header text was wrong. A table
+        # containing only raw frames now says so; MASTER only when every row
+        # actually is one; a genuinely mixed table (a master used for one
+        # gain, raw frames surviving for another because no master covered
+        # it) favours MASTER, since it tells the reader master calibration
+        # was used for at least part of the data -- the safer thing to
+        # under-claim toward is "some of this is raw", not the reverse.
+        # `imagetype` here is always the category's base (raw) type --
+        # generate_full_summary passes type_tuple[0], and every tuple is
+        # (raw, MASTER_raw) -- so pluralising it is what needs the BIAS
+        # exception the original label_map already encoded ('BIAS' ->
+        # 'MASTERBIAS', not 'MASTERBIASS'; every other type takes a plain S).
+        base = imagetype.upper()
+        plain_label = base if base == 'BIAS' else f"{base}S"
+        actual_types = set(image_group[InternalColumns.IMAGE_TYPE].astype(str).str.upper())
+        has_master = any(t.startswith('MASTER') for t in actual_types)
+        display_label = f"MASTER{plain_label}" if has_master else plain_label
+
         lines.append(f"\n {display_label}:\n")
         header = " {:<10} {:<8} {:<10} {:<15} {:<12} {:<15}"
         lines.append(header.format("Filter", "Frames", "Gain", "Egain", "Exposure", "Total Exposure"))
