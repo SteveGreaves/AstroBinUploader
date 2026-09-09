@@ -105,9 +105,8 @@ running.
 
 #### Issues reported on GitHub
 
-Every issue on the tracker is resolved in the code this release ships. They were
-fixed across v2.1.0–v2.1.2 and are listed here so a reporter can see the outcome
-in one place; the tracker now stands at zero open issues.
+Every issue reported on the tracker is fixed in this release. The tracker now
+stands at zero open issues.
 
 - **[#11](https://github.com/SteveGreaves/AstroBinUploader/issues/11) — a duplicate
   filter collapsed every frame into one row per `IMAGETYP`, so only a single
