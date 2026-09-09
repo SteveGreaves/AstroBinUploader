@@ -81,6 +81,51 @@ def initialise_logging(log_filename: str) -> logging.Logger:
         print(f"CRITICAL ERROR: Failed to initialize logging: {e}")
         return logging.getLogger()
 
+def resolve_test_csv(given: str, output_dir: str) -> str:
+    """
+    Resolves the --test CSV argument to a real file.
+
+    Two locations are tried, in this order:
+
+    1. Inside ``output_dir`` -- ``<first directory>/AstroBinUploadInfo`` --
+       which is where a ``--debug`` run writes ``debug_step_00_RawHeaders.csv``
+       and where a crash writes ``emergency_raw_dump.csv``. Passing the bare
+       filename is therefore enough to replay your own debug run. This is the
+       behaviour the README has always documented; it was how v1.4.x resolved
+       the argument (``os.path.join(output_dir, args.test)``) and the v2.0.0
+       rewrite dropped it, leaving a bare ``pd.read_csv`` and a documented
+       form that could not work.
+
+    2. The path exactly as given, resolved from the current directory or as
+       an absolute path. This is what v2.0.0-v2.2.0 accepted, and it is the
+       form that matters when the CSV came from somewhere else entirely --
+       a file a user sent in to have their error reproduced.
+
+    An absolute path satisfies both, since ``os.path.join`` discards its first
+    argument when the second is absolute.
+
+    Args:
+        given (str): The raw --test argument.
+        output_dir (str): The run's AstroBinUploadInfo directory.
+
+    Returns:
+        str: Path to an existing CSV file.
+    """
+    candidates = [os.path.join(output_dir, given), given]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    print(f"\n[ERROR] --test file not found: {given}")
+    print("Looked in both:")
+    for candidate in dict.fromkeys(candidates):
+        print(f"  {os.path.abspath(candidate)}")
+    print(
+        "\nPass either the bare filename of a CSV inside AstroBinUploadInfo, "
+        "or a path to one elsewhere.\n"
+    )
+    sys.exit(1)
+
 def main():
     """
     Main execution loop.
@@ -90,26 +135,28 @@ def main():
     """
     # Define and parse CLI arguments
     parser = argparse.ArgumentParser(
-        description="AstroBin Upload Utility v2.1.1 - A high-performance ETL pipeline for astronomical metadata.",
+        description=f"AstroBin Upload Utility v{APP_VERSION} - A high-performance ETL pipeline for astronomical metadata.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Example Usage:
-        python3 AstroBinUpload.py /path/to/my/images
-        python3 AstroBinUpload.py /path/to/my/images /path/to/my/calibrationfiles
-        python3 AstroBinUpload.py /images /calibration_dir --debug
-        python3 AstroBinUpload.py . --test my_headers.csv
+        .venv/bin/python3 AstroBinUpload.py                        (first run: creates config.ini)
+        .venv/bin/python3 AstroBinUpload.py /path/to/my/images
+        .venv/bin/python3 AstroBinUpload.py /path/to/my/images /path/to/my/calibrationfiles
+        .venv/bin/python3 AstroBinUpload.py /images /calibration_dir --debug
+        .venv/bin/python3 AstroBinUpload.py . --test my_headers.csv
         """
     )
     parser.add_argument(
         'directory_paths', 
-        nargs='+', 
-        help='One or more directory paths to recursively scan for FITS (.fits, .fit, .fts) or XISF (.xisf) files.'
+        nargs='*', 
+        help='One or more directory paths to recursively scan for FITS (.fits, .fit, .fts) or XISF (.xisf) files. '
+             'Omit them entirely on a first run to generate a default config.ini.'
     )
     parser.add_argument(
         '--test', 
         type=str, 
         metavar='CSV_FILE',
-        help='Diagnostic Mode: Instead of scanning disk, inject metadata from a pre-processed CSV file. The CSV must reside in the first directory path provided.'
+        help='Diagnostic Mode: Instead of scanning disk, inject metadata from a pre-processed CSV file. Looked for first in the run\'s AstroBinUploadInfo directory (so a bare filename replays your own --debug run), then at the path as given.'
     )
     parser.add_argument(
         '--debug', 
@@ -124,6 +171,41 @@ def main():
         help='Specify a custom configuration file (default: config.ini).'
     )
     args = parser.parse_args()
+
+    # --- Step 0: First-run configuration bootstrap ---
+    #
+    # Running with no directory paths at all generates a default config.ini
+    # and exits, so that a brand-new user has something to edit. This is the
+    # behaviour the README has always documented, and it was lost twice: the
+    # guard in v1.3.10 read `len(sys.argv) < 2 and os.path.isfile(CONFIG...)`,
+    # deliberately letting a no-argument first run fall through to config
+    # generation, but `output_dir = sys.argv[1]` sat between that guard and the
+    # generation code, so it raised IndexError before ever reaching it. V1.3.12
+    # commented the `os.path.isfile` term out -- fixing the crash by removing
+    # the feature -- and v1.4.5's switch to argparse with nargs='+' made a path
+    # structurally mandatory, at which point a bare invocation became a usage
+    # error. Restored in v2.2.0, with the crash fixed rather than reintroduced:
+    # the branch runs before any path-dependent setup, and the case V1.3.12
+    # actually cared about (no paths, config already present) is an explicit
+    # error rather than a fall-through.
+    if not args.directory_paths:
+        if os.path.exists(args.config):
+            print(
+                f"\nNo directory path provided, and '{args.config}' already exists.\n"
+                "Give one or more directories to scan.\n"
+            )
+            parser.print_usage()
+            sys.exit(1)
+        if args.config != 'config.ini':
+            # Only the default name is ever generated; a named profile that is
+            # missing is a mistake, not a request to create one.
+            print(f"\nThe specified configuration file '{args.config}' was not found.\n")
+            sys.exit(1)
+        # Generates the file, prints the standard message and exits(0). The
+        # logger has no handlers here -- there is no output directory yet, and
+        # nothing to log to one -- but load() prints for the user regardless.
+        ConfigLoader(logging.getLogger("AstroBinV2")).load(args.config)
+        sys.exit(0)
 
     # --- Step 1: Environment Setup ---
 
@@ -182,7 +264,7 @@ def main():
         extractor = HeaderExtractor(logger, config)
         if args.test:
             # Load from CSV for reproducibility and rapid testing
-            raw_df = extractor.extract_from_csv(args.test)
+            raw_df = extractor.extract_from_csv(resolve_test_csv(args.test, output_dir))
         else:
             # Parallelized scan of all provided directories
             raw_df = extractor.extract_from_directories(directory_paths)
