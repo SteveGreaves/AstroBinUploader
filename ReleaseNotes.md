@@ -103,6 +103,53 @@ did not match what you actually receive.
 **`--help` reported the wrong version**, always "v2.1.1" regardless of what was
 running.
 
+#### Issues reported on GitHub
+
+Every issue on the tracker is resolved in the code this release ships. They were
+fixed across v2.1.0–v2.1.2 and are listed here so a reporter can see the outcome
+in one place; the tracker now stands at zero open issues.
+
+- **[#11](https://github.com/SteveGreaves/AstroBinUploader/issues/11) — a duplicate
+  filter collapsed every frame into one row per `IMAGETYP`, so only a single
+  session was reported.** A 9-session, 486-file dataset was reduced to 2 rows and
+  summarised as one night with one light frame. The WBPP de-duplication pattern
+  was unanchored and `_c.*` matched the first `_c` anywhere in the name — in a
+  target called `CandidateDolphin`, that is the `_C` of the target itself, so
+  every light collapsed to the base name `LIGHT` and every flat to `FLAT`.
+
+  The pattern now enumerates the actual WBPP postfix chain and is anchored to the
+  extension at end of string, so `_c` matches only where it really is a postfix.
+  Verified against the reporter's own filenames: distinct frames stay distinct,
+  the `_c` / `_c_cc` / `_c_cc_r` chain still collapses to one base, and a
+  temperature field like `-10.00c` no longer truncates the name.
+
+  The same report noted that `FILENAME` held only the basename, so identically
+  named files in different session folders would still collide. That is fixed
+  too: de-duplication keys on the containing directory as well as the base name.
+
+- **[#9](https://github.com/SteveGreaves/AstroBinUploader/issues/9) and
+  [#10](https://github.com/SteveGreaves/AstroBinUploader/issues/10) — master
+  calibration frames.** Sub-exposure counts are read from a master's history
+  (PixInsight `ProcessingHistory`, XISF `COMMENT`/`HISTORY`, FITS `HISTORY`)
+  instead of being reported as `1`, and two master darks at the same gain but
+  different exposures are reported as two rows with their own counts rather than
+  merged into one.
+
+- **[#3](https://github.com/SteveGreaves/AstroBinUploader/issues/3) — rotator not
+  found.** The name now keys on `ROTNAME` and the angle on `ROTANTANG`; the
+  generated config seeds both, instead of a stale `ROTATOR` key.
+
+- **[#6](https://github.com/SteveGreaves/AstroBinUploader/issues/6) — FITS header
+  modification.** `AOCSKYQU`→SQM and `AOCAMBT`→FOCTEMP are now among the default
+  `[override]` mappings.
+
+- **[#5](https://github.com/SteveGreaves/AstroBinUploader/issues/5) — overriding a
+  found *value* rather than a keyword.** Added as the `[equipmentoverrides]`
+  section.
+
+- **[#4](https://github.com/SteveGreaves/AstroBinUploader/issues/4) — selecting a
+  config file from the command line.** `--config` / `-c`.
+
 ### The generated `config.ini` now explains itself
 
 The configuration file the program creates on first run used to be a bare list of
