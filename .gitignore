@@ -185,3 +185,8 @@ RUST_PORT.md
 # testing possible without machine-specific data. Only its run-scratch
 # output is ignored.
 golden_tests/run_output/
+
+# Local reference: the pre-v2.0.0 sites_functions.py, kept beside the
+# restoration it was rebuilt from. Retrievable with:
+#   git show fdd1f19^:sites_functions.py
+sites_functions.v1.reference.py

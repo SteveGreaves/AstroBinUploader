@@ -88,6 +88,9 @@ class ConfigLoader:
             ),
             filters=normalized.get(ConfigSections.FILTERS, {}),
             sites=normalized.get(ConfigSections.SITES, {}),
+            # Optional. Absent -> empty dict -> SiteLookup stays offline and the
+            # pipeline behaves exactly as it did in v2.0.0-v2.1.3.
+            secret=normalized.get(ConfigSections.SECRET, {}),
             use_obs_date=use_obs_date
         )
 

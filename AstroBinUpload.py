@@ -208,8 +208,15 @@ def main():
 
         # --- Stage 4: Execution & Export ---
         
-        # Initialize the shared SessionState container
-        state = SessionState(config=config, raw_df=raw_df)
+        # Initialize the shared SessionState container. The config path is
+        # carried so GeocodeStep can write a newly geocoded site back into
+        # [sites] -- but only on a real scan: a --test replay passes None, so a
+        # diagnostic run never edits the user's configuration.
+        state = SessionState(
+            config=config,
+            raw_df=raw_df,
+            config_path=None if args.test else args.config,
+        )
         
         # Execute the transformation pipeline
         state = processor.run(state, debug=args.debug, output_dir=output_dir)

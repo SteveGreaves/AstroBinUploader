@@ -53,6 +53,23 @@
         Blue = 4637
         Lum = 2906
         CLS = 4632
+[secret]
+        # OPTIONAL. Delete this whole section to keep the program entirely
+        # offline -- it then takes the site name from [defaults] SITE and the
+        # sky quality from [defaults] BORTLE/SQM, and contacts nothing.
+        #
+        # With it, a coordinate that [sites] does not already know is resolved
+        # once: the address comes from OpenStreetMap's Nominatim service, and
+        # the Bortle/SQM from lightpollutionmap.info's World Atlas 2015 layer.
+        # The result is written back into [sites] below, so it is never looked
+        # up twice. Any failure falls back to the [defaults] values.
+        #
+        # EMAIL_ADDRESS is required by Nominatim's terms of service as a
+        # contact for the request; it is sent in the user agent and nowhere
+        # else. Get a free API key from https://www.lightpollutionmap.info.
+        #API key         API endpoint
+        YOUR_API_KEY = https://www.lightpollutionmap.info/QueryRaster/
+        EMAIL_ADDRESS = your_email@example.com
 [sites]
         [["My Full Site Address, Country, Postcode"]]
                 latitude = 0.0000

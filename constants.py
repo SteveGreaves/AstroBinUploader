@@ -65,6 +65,11 @@ class ConfigSections:
     EQUIPMENT_OVERRIDES = 'equipmentoverrides'  # User-defined value replacement
     FILTERS = 'filters'        # AstroBin filter code database
     SITES = 'sites'            # Local site coordinates database
+    SECRET = 'secret'          # Sky-quality API credentials and the contact
+                               # e-mail Nominatim's terms of service require.
+                               # Optional: absent means no network lookup is
+                               # attempted and the [defaults]/[sites] values
+                               # are used, exactly as in v2.0.0-v2.1.3.
 
 class InternalColumns:
     """

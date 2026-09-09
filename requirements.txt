@@ -8,11 +8,19 @@
 # needed is Python standard library (argparse, concurrent.futures,
 # dataclasses, datetime, enum, logging, os, re, struct, sys, typing, xml).
 #
-# geopy was previously listed but is no longer a runtime dependency as of
-# the A3/A4 fix in this same remediation pass: GeocodeStep now uses a
-# hand-rolled vectorized haversine formula rather than calling geopy in a
-# per-row loop (see engine/steps/geocode.py's module docstring for why).
+# GeocodeStep's *distance* maths is a hand-rolled vectorized haversine, not
+# geopy, and that has not changed (the A3/A4 fix; see the module docstring in
+# engine/steps/geocode.py for why a per-row geopy call was the wrong shape).
 astropy==6.1.3
 pandas==2.2.3
 numpy==2.1.1
 configobj==5.0.8
+
+# Optional -- only imported when a [secret] section is present, and only at
+# the moment a coordinate that [sites] does not already know needs resolving
+# (engine/sites.py). Without them, and without [secret], the program makes no
+# network calls at all and every path still works: the site name and its
+# Bortle/SQM simply come from [defaults], exactly as in v2.0.0-v2.1.3.
+# Restored in v2.2.0 along with the lookups themselves.
+geopy==2.4.1
+requests==2.32.3

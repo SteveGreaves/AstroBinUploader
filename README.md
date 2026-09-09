@@ -543,7 +543,7 @@ If `pip` is not recognized, ensure Python is added to your System PATH during in
 * **Non-Standard Keywords**: If your capture software uses unique names for standard data, use the `[override]` section in `config.ini` to map them (e.g., mapping `CAMERA_MODEL` to `INSTRUME`).
 
 ### **Sky Quality and Site Naming**
-* **No network calls**: since v2.1.0 the program contacts no external service. Bortle and SQM come from a matching `[sites]` entry, or from `[defaults]` when no site matches — see [Sky quality](#sky-quality) and [Site names](#site-names-formerly-reverse-geocoding) below.
+* **Offline by default, online only if you ask**: with no `[secret]` section the program contacts no external service and takes Bortle, SQM and the site name from `[sites]` or `[defaults]`. Add `[secret]` and a coordinate it doesn't recognise is looked up once — address from OpenStreetMap, sky quality from lightpollutionmap.info — and written back to `[sites]`. See [Sky quality](#sky-quality-bortle-and-sqm) and [Site names](#site-names-and-reverse-geocoding) below.
 * **Unexpected site name**: site naming is local and coordinate-clustered. If a session is attributed to the wrong site, check that its `[sites]` latitude and longitude match the frames' headers.
 
 <div style="page-break-after: always;"></div>
@@ -612,32 +612,42 @@ From this URL, the AstroBin code for this Astronomik 2-inch H-alpha CCD 6nm filt
 
 ## **Sky quality (Bortle and SQM)**
 
-**As of v2.1.0 the utility makes no network calls.** Bortle and SQM come from
-your `config.ini` — either from a matching entry in `[sites]`, or from
-`[defaults]` when no site matches.
+Bortle and SQM come from your `config.ini` — from a matching entry in
+`[sites]`, or from `[defaults]` when no site matches. You can fill those in by
+hand: look your site up by latitude and longitude at the excellent
+<https://www.lightpollutionmap.info> and copy the figures across.
 
-To fill those values in, look your observing site up by latitude and longitude
-at the excellent <https://www.lightpollutionmap.info> and copy the Bortle and
-SQM figures it reports into the relevant section. Earlier versions could fetch
-this automatically with an API key held in `[secret]`; that path was removed,
-along with the section.
+**Or let the program do it.** With an API key in `[secret]`, a coordinate that
+`[sites]` does not already know is looked up once against
+lightpollutionmap.info's World Atlas 2015 layer: the artificial brightness it
+returns is converted to an SQM figure and then to a Bortle class, and the
+result is written into `[sites]` so it is never fetched again.
 
-## **Site names (formerly reverse geocoding)**
+This was how the utility worked through v1.4.x. The v2.0.0 rewrite dropped it
+without recording the loss, and v2.1.0 removed the `[secret]` section it
+depended on; **v2.2.0 restores both**. Delete `[secret]` and the program is
+entirely offline again, using exactly the values you have configured.
 
-Also removed in v2.1.0. Earlier versions passed each site's coordinates to the
-Nominatim / OpenStreetMap API (via `geopy`) to turn them into a postal
-address, using an email address from `[secret]` as the courtesy identifier.
-`geopy` is no longer a dependency at all.
+## **Site names and reverse geocoding**
 
-Site naming is now entirely local, and works like this:
+Site naming works like this:
 
 1. Coordinates from every frame's headers are clustered — readings within
    about 110 m of each other are treated as one physical site, which absorbs
    ordinary GPS drift across sessions.
 2. Each cluster's centroid is looked up in `[sites]`. A match supplies that
    site's name, Bortle and SQM.
-3. No match falls back to `[defaults]` (`SITE`, `SITELAT`, `SITELONG`,
-   `BORTLE`, `SQM`).
+3. No match, and an `EMAIL_ADDRESS` in `[secret]`: the coordinates are passed
+   to the Nominatim / OpenStreetMap service (via `geopy`) to turn them into a
+   postal address, which becomes the site's name and is saved into `[sites]`.
+   The e-mail address is the courtesy identifier Nominatim's terms of service
+   require; it is sent in the request's user agent and nowhere else.
+4. No match and no `[secret]`, or a lookup that fails for any reason: falls
+   back to `[defaults]` (`SITE`, `SITELAT`, `SITELONG`, `BORTLE`, `SQM`).
+
+The long postal addresses you may already have in `[sites]` were produced by
+step 3 in v1.4.x — they were never meant to be typed by hand. That step was
+dropped by the v2.0.0 rewrite and **restored in v2.2.0**.
 
 Multi-site sessions therefore still report per-site correctly, provided each
 site has an entry in `[sites]`. Add one by hand using the format shown in the

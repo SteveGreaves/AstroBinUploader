@@ -17,6 +17,7 @@ import logging
 from typing import Optional
 from models import SessionState
 from constants import InternalColumns, ImageType
+from engine.sites import SiteLookup
 
 # Mean Earth radius in metres (IUGG value), used by the haversine distance
 # below.
@@ -146,22 +147,42 @@ class GeocodeStep:
 
         # --- Stage 3: Site Identification (Database Lookup) ---
         sites_db = pd.DataFrame(config.sites).transpose()
-        
+
+        # A coordinate the local [sites] database does not know can be resolved
+        # over the network instead -- reverse geocoding for the name, the World
+        # Atlas for its sky quality -- and the answer written back so it is
+        # only ever looked up once. Restored in v2.2.0; see engine/sites.py for
+        # what was lost in v2.0.0 and why this degrades the way it does.
+        # `enabled` is False whenever [secret] is absent, which is what keeps
+        # an ordinary run, and the whole golden corpus, entirely offline.
+        lookup = SiteLookup(config, logger)
+        discovered = []
+
         # Iterate through distinct clusters to assign site metadata
         cluster_results = {}
         for cid, group in df.groupby('site_cluster'):
             avg_lat = group[InternalColumns.SITE_LAT].iloc[0]
             avg_lon = group[InternalColumns.SITE_LONG].iloc[0]
-            
+
             # Fuzzy Coordinate Lookup in the local DB
             site_info = self._find_site_in_db(sites_db, avg_lat, avg_lon, state.config.precision)
-            
+
             if site_info is not None:
                 cluster_results[cid] = {
                     InternalColumns.SITE_NAME: str(site_info.name),
                     InternalColumns.BORTLE: int(site_info.get('bortle', config.defaults.get('BORTLE', 4))),
                     InternalColumns.MEAN_SQM: float(site_info.get('sqm', config.defaults.get('SQM', 21.0)))
                 }
+                continue
+
+            resolved = lookup.resolve(avg_lat, avg_lon) if lookup.enabled else None
+            if resolved is not None:
+                cluster_results[cid] = {
+                    InternalColumns.SITE_NAME: resolved['site'],
+                    InternalColumns.BORTLE: resolved['bortle'],
+                    InternalColumns.MEAN_SQM: resolved['sqm'],
+                }
+                discovered.append((resolved, avg_lat, avg_lon))
             else:
                 cluster_results[cid] = {
                     InternalColumns.SITE_NAME: str(config.defaults.get('SITE', 'Unknown Site')),
@@ -169,6 +190,15 @@ class GeocodeStep:
                     InternalColumns.MEAN_SQM: float(config.defaults.get('SQM', 21.0))
                 }
                 logger.debug(f"Site Cluster {cid}: No DB match for averaged coords ({avg_lat:.4f}, {avg_lon:.4f}). Used defaults.")
+
+        # Persist anything newly resolved, after the loop rather than inside it:
+        # one config write per run, and never a partial one if a later cluster
+        # fails. `config_path` is None on the --test replay path, which is what
+        # stops a diagnostic run from editing the user's configuration.
+        if discovered and getattr(state, 'config_path', None):
+            for resolved, lat, lon in discovered:
+                lookup.save(resolved['site'], lat, lon, resolved['bortle'],
+                            resolved['sqm'], state.config_path)
 
         # Final Assignment
         for cid, metadata in cluster_results.items():

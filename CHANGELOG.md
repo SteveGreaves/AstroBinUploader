@@ -1,5 +1,57 @@
 # Changelog
 
+## [2.2.0] - 2026-09-09
+Restores a capability the v2.0.0 rewrite dropped without recording it.
+
+### Restored
+- **Reverse geocoding and live sky-quality lookups.** Through v1.4.x,
+  `sites_functions.py` resolved a coordinate the `[sites]` database did not
+  know: OpenStreetMap's Nominatim supplied the site's postal address, and
+  lightpollutionmap.info's World Atlas 2015 layer supplied its artificial
+  brightness, converted to SQM and then to a Bortle class. The result was
+  written back into `[sites]`, so each site was looked up exactly once. The
+  long addresses in a populated `[sites]` section were produced this way;
+  they were never meant to be typed by hand.
+
+  The v2.0.0 "clean slate" rewrite removed all of it. No changelog entry
+  recorded the loss — that release claimed "absolute visual parity with
+  legacy v1.4.x reports", which was true of the *reports* and not of the
+  behaviour behind them. v2.1.0 then removed the leftovers as hygiene: the
+  `Nominatim` import (described as "unused", which it was, because its caller
+  had already gone) and the `[secret]` section holding the API key and the
+  contact e-mail. By v2.1.3 the README described the result as a feature —
+  "No network calls: since v2.1.0 the program contacts no external service" —
+  which documented an accident as a design decision, and misdated it.
+
+  Restored in `engine/sites.py` from the v1.4.x source rather than
+  reimplemented: the nine Bortle bands, the brightness→SQM formula and its
+  constants, and the 16-character key validation are carried over exactly, so
+  a site already recorded in a user's `[sites]` section keeps the
+  classification it was given.
+
+- **The `[secret]` configuration section**, and `geopy`/`requests` as
+  *optional* dependencies.
+
+### Behaviour when not configured
+Unchanged, deliberately, and this is the part that is tested hardest: with no
+`[secret]` section the program makes **no network calls at all**, imports
+neither optional dependency, and takes the site name from `[defaults] SITE`
+and the sky quality from `[defaults] BORTLE`/`SQM` exactly as v2.0.0–v2.1.3
+did. Every failure mode — missing credentials, no network, a refused request,
+a malformed response, `geopy`/`requests` not installed — degrades to those
+same defaults and lets the run finish. A `--test` replay never writes to the
+configuration.
+
+The golden corpus has no `[secret]` section and both references are
+unchanged, which is what proves the offline path did not move.
+
+### Testing
+- `tests/test_sites.py` — 30 cases: the offline guarantee, every Bortle band
+  and both sides of every boundary, the brightness conversion, credential
+  validation, the `[secret]` section's `KEY = ENDPOINT` shape, and the
+  request path driven through an injected fake so the suite never needs a
+  network.
+
 ## [2.1.3] - 2026-09-09
 Found while building a test dataset for the Rust port (`ic405`: a real
 February 2022 session including 250 raw `DARKFLAT` frames, none of them

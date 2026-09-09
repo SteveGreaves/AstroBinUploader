@@ -12,7 +12,7 @@ Core Components:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import pandas as pd
 
 @dataclass
@@ -30,6 +30,10 @@ class AppConfig:
             (e.g. focname = ZWO EAF), applied after defaults. GitHub #5.
         filters (Dict[str, Any]): Map of filter names to AstroBin numeric IDs.
         sites (Dict[str, Dict[str, Any]]): Database of previously geocoded site coordinates.
+        secret (Dict[str, Any]): Optional [secret] section -- the sky-quality API
+            key/endpoint and the contact e-mail Nominatim's terms of service require.
+            Empty when the section is absent, which disables every network lookup and
+            keeps the wholly offline behaviour of v2.0.0-v2.1.3.
         use_obs_date (bool): If True, use calendar capture date; if False, shift overnight sessions.
         precision (int): Decimal precision for coordinate rounding and fuzzy matching.
     """
@@ -40,6 +44,7 @@ class AppConfig:
     use_obs_date: bool = True
     precision: int = 4
     equipment_overrides: Dict[str, str] = field(default_factory=dict)
+    secret: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class SessionState:
@@ -56,9 +61,14 @@ class SessionState:
         processed_df (pd.DataFrame): Normalized and cleaned data undergoing transformations.
         aggregated_df (pd.DataFrame): Final session-level statistics grouped for export.
         total_images_scanned (int): Running counter for the number of files identified.
+        config_path (Optional[str]): Path the configuration was loaded from, so a
+            newly geocoded site can be written back to it. None on the --test
+            replay path, which is what stops a diagnostic run from editing the
+            user's configuration.
     """
     config: AppConfig
     raw_df: pd.DataFrame = field(default_factory=pd.DataFrame)
     processed_df: pd.DataFrame = field(default_factory=pd.DataFrame)
     aggregated_df: pd.DataFrame = field(default_factory=pd.DataFrame)
     total_images_scanned: int = 0
+    config_path: Optional[str] = None
