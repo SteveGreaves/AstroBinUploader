@@ -60,6 +60,49 @@ recommended when you upgrade — especially if a future release changes a pinned
 library version, since that is the case where a system-wide install can go wrong
 silently.
 
+### Fixed
+
+**Configured `[defaults]` values were ignored whenever only *some* frames lacked
+the header.** `[defaults]` is meant to answer "what should a frame with no header
+for this field be assigned?", but that only held when a column was missing from
+the data entirely. If even one frame in a batch supplied the header, every other
+frame's blank in that column fell back to a hardcoded value instead, silently
+discarding what you had configured.
+
+The visible symptom was a session mixing frames that carry GPS data with frames
+that do not — 250 raw `DARKFLAT` frames alongside lights, in the case that found
+it. The summary reported
+
+    Latitude: 0.0000°   Longitude: 0.0000°
+
+— a point in the Gulf of Guinea — instead of the observer's own configured site.
+
+Seven fields were affected: `GAIN`, `EGAIN`, `FOCALLEN`, `XPIXSZ`, `SITELAT`,
+`SITELONG` and `OBJECT`. The other hardened fields already agreed with their
+configured defaults, so nothing changes for them. `OBJECT` had a second problem
+on top: unlike every other field in that table it had no fallback at all when its
+column existed, so a blank target name survived into the report as an empty value.
+
+**Running with no arguments did nothing useful.** The documented first step —
+run the script with no arguments to generate a `config.ini` — produced only
+`error: the following arguments are required: directory_paths`, with nothing
+indicating that a configuration file was needed or that the program would create
+one. Fixed; see below.
+
+**`--test` could not find its file where the documentation said to put it.** A
+bare filename failed, so reproducing a problem from a `debug_step_00_RawHeaders.csv`
+meant typing a full path. Fixed; see below.
+
+**`config.ini.example` disagreed with the program.** `USEOBSDATE` was `False`
+where the program's own default is `True` — it decides whether frames taken after
+midnight count with the previous evening's session — so anyone who started from
+the example got different date handling from anyone who let the program generate a
+config. It also listed an `FWHM` key that is never read, and several values that
+did not match what you actually receive.
+
+**`--help` reported the wrong version**, always "v2.1.1" regardless of what was
+running.
+
 ### The generated `config.ini` now explains itself
 
 The configuration file the program creates on first run used to be a bare list of
