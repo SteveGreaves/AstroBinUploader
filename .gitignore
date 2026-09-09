@@ -189,11 +189,12 @@ config_back*.ini
 config.ini.bak
 config.ini.backup
 
-# golden_tests/ IS tracked (see REMEDIATION_PLAN.md P0): it holds the
-# committed fixture corpus and reference outputs that make regression
-# testing possible without machine-specific data. Only its run-scratch
-# output is ignored.
-golden_tests/run_output/
+# golden_tests/ is local-only. It was committed in a2a0741 so the regression
+# harness would run on a clean clone (REMEDIATION_PLAN.md P0); the user's
+# policy that test code and data stay off GitHub post-dates that commit, and
+# this applies it. The corpus and the harness both remain on disk here and
+# work exactly as before -- they are simply not repository content.
+golden_tests/
 
 # Local reference: the pre-v2.0.0 sites_functions.py, kept beside the
 # restoration it was rebuilt from. Retrievable with:
