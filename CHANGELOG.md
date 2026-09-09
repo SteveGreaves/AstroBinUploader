@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.1.3] - 2026-09-09
+Found while building a test dataset for the Rust port (`ic405`: a real
+February 2022 session including 250 raw `DARKFLAT` frames, none of them
+carrying GPS data).
+
+### Fixed
+- A configured `[defaults]` value was only ever honoured when a header
+  column was missing *entirely*. The moment even one frame in a batch
+  supplied the header, every other frame's blank in that same column fell
+  back to a hardcoded literal instead — silently discarding the user's
+  configuration for exactly the case `[defaults]` exists to cover. Affected
+  seven fields where the hardcoded fallback disagreed with a configured
+  one: `GAIN`, `EGAIN`, `FOCALLEN`, `XPIXSZ`, `SITELAT`, `SITELONG`,
+  `OBJECT`.
+
+  The visible symptom: a calibration frame with no `SITELAT`/`SITELONG`
+  reported `Latitude: 0.0000° / Longitude: 0.0000°` — the Gulf of Guinea —
+  instead of the observer's own configured site, whenever at least one
+  other frame in the same run supplied real coordinates. `OBJECT` had a
+  second, narrower bug on top: no fallback branch existed for it at all, so
+  a blank target name stayed blank straight through to the report rather
+  than falling back to even the hardcoded `'Unknown'`.
+
+  `NormalizeHeadersStep`'s per-cell hardening (`base.py`) now looks up each
+  of these seven from `config.defaults` first, falling back to the
+  hardcoded literal only when the config file does not define that key.
+  The other twelve hardened fields (`BORTLE`, `SQM`, `FOCTEMP`, `CCD-TEMP`,
+  `FOCRATIO`, `EXPOSURE`, `XBINNING`, `FILTER`, ...) already agreed with
+  their configured default and are unaffected.
+
+  `sadr` and `sh2101_calib` — the two golden references — are unchanged: neither
+  carries a blank in any of the seven fields.
+
 ## [2.1.2] - 2026-09-08
 Found while validating the Rust port against real, unstructured data.
 

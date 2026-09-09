@@ -214,20 +214,53 @@ class NormalizeHeadersStep:
         # --- Stage 7: Core Column Hardening ---
         # Ensure critical columns exist and are strictly typed.
         logger.debug("Reducing headers and hardening core column data types")
+
+        def _configured_default(raw_key, fallback, cast=float):
+            """Prefers the user's [defaults] value over the hardcoded fallback.
+
+            Stage 3 above only ever consults config.defaults when a column is
+            missing outright. That left a gap: the moment even one frame in a
+            batch supplies a header, every *other* frame's blank in that same
+            column reverts to the literal below, regardless of what the user
+            configured -- even for fields [defaults] exists specifically to
+            answer, like "where was this frame shot if it carries no GPS
+            data?" A calibration frame with no SITELAT/SITELONG previously
+            hardened to 0.0/0.0 -- the middle of the Gulf of Guinea -- instead
+            of the observer's own configured site, discovered via the `ic405`
+            dataset (250 raw DARKFLAT frames, none of them carrying GPS) in
+            AstroBinUploaderRust's parity corpus.
+
+            This is the same defaulting question Stage 3 already answers for
+            a wholly-missing column, so it is resolved the same way: prefer
+            config.defaults, and only fall back to the hardcoded literal when
+            the config file does not define that key at all (as most of the
+            table below does not -- BORTLE/SQM/FOCTEMP/CCD-TEMP/FOCRATIO/
+            EXPOSURE/XBINNING all already agree with their config default and
+            are left as plain literals; IMSCALE/NUMBER/darks/flats/flatDarks/
+            bias have no config key to look up).
+            """
+            raw = config.defaults.get(raw_key)
+            if raw is None:
+                return fallback
+            try:
+                return cast(raw)
+            except (TypeError, ValueError):
+                return fallback
+
         core_columns = {
-            InternalColumns.GAIN: 0,
-            InternalColumns.EGAIN: 1.0,
+            InternalColumns.GAIN: _configured_default('GAIN', 0, int),
+            InternalColumns.EGAIN: _configured_default('EGAIN', 1.0),
             InternalColumns.DURATION: 0.0,
             InternalColumns.SENSOR_COOLING: -10.0,
-            InternalColumns.FOCAL_LENGTH: 500,
+            InternalColumns.FOCAL_LENGTH: _configured_default('FOCALLEN', 500),
             InternalColumns.F_NUMBER: 5.0,
-            InternalColumns.PIXEL_SIZE: 3.76,
-            InternalColumns.SITE_LAT: 0.0,
-            InternalColumns.SITE_LONG: 0.0,
+            InternalColumns.PIXEL_SIZE: _configured_default('XPIXSZ', 3.76),
+            InternalColumns.SITE_LAT: _configured_default('SITELAT', 0.0),
+            InternalColumns.SITE_LONG: _configured_default('SITELONG', 0.0),
             InternalColumns.BORTLE: 4.0,
             InternalColumns.MEAN_SQM: 21.0,
             InternalColumns.TEMPERATURE: 20.0,
-            InternalColumns.TARGET: 'Unknown',
+            InternalColumns.TARGET: _configured_default('OBJECT', 'Unknown', str),
             InternalColumns.FILTER_NAME: 'No Filter',
             InternalColumns.SITE_NAME: 'Unknown Site',
             InternalColumns.BINNING: 1,
@@ -237,7 +270,7 @@ class NormalizeHeadersStep:
             InternalColumns.NUMBER: 1,
             'darks': 0, 'flats': 0, 'flatDarks': 0, 'bias': 0
         }
-        
+
         for col, default in core_columns.items():
             if col not in df.columns:
                 # Initialize missing core columns with defaults
@@ -264,6 +297,12 @@ class NormalizeHeadersStep:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(default).round().astype(int)
                 elif col == InternalColumns.SITE_NAME:
                     # Standardize Site Names as strings
+                    df[col] = df[col].astype(str).replace('nan', default)
+                elif col == InternalColumns.TARGET:
+                    # A blank OBJECT header previously reached this point and
+                    # was left NaN outright -- no branch handled it at all,
+                    # unlike every other column here. Same string-column
+                    # idiom as SITE_NAME just above.
                     df[col] = df[col].astype(str).replace('nan', default)
 
         logger.debug("Completed data type conversion and header normalization")
