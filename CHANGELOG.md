@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.1] - 2026-09-09
+A security fix for the sky-quality lookup restored in 2.2.0.
+
+### Fixed
+- **The API key no longer reaches the log.** `requests` embeds the full
+  request URL, query string included, in its exception messages. The
+  sky-quality key rides in that query string, so any ordinary failure — a
+  404, a timeout, a DNS error — wrote the user's key in plaintext into
+  `AstroBinUploader.log`, which is the file a user is most likely to attach
+  to a bug report or paste into an issue. It reached the log twice: once
+  from the `logger.error` in `get_bortle_sqm`, and again via the error
+  string it returns, which `SiteLookup.resolve` logs as `API error: ...`.
+  Both are now redacted at the single point the exception is stringified
+  (`redact_api_key`). The key is validated as alphanumeric, so it is never
+  percent-encoded in a URL and the literal replacement is exact.
+
+  Found while porting this module to the Rust edition, by checking what an
+  errored request actually writes rather than assuming.
+
 ## [2.2.0] - 2026-09-09
 Restores a capability the v2.0.0 rewrite dropped without recording it.
 

@@ -1,5 +1,29 @@
 # Release Notes - AstroBin Upload Utility
 
+## [v2.2.1] - 2026-09-09
+### Your sky-quality API key no longer appears in the log
+
+If you use the `[secret]` section, **upgrade and delete any old
+`AstroBinUploader.log` you still have** — and if you have already shared one,
+treat the key in it as compromised and ask lightpollutionmap.info for a new
+one.
+
+Whenever a sky-quality request failed — an ordinary 404, a timeout, a DNS
+error, nothing exotic — the log recorded the failure with the full request
+URL, and your API key is part of that URL:
+
+    ERROR - Sky quality lookup failed: 404 Client Error: Not Found for url:
+    https://www.lightpollutionmap.info/QueryRaster/?...&key=YOUR_KEY_HERE
+
+`AstroBinUploader.log` is exactly the file you would attach to a bug report or
+paste into an issue, so this had a real chance of putting your key somewhere
+public. It now reads `key=<redacted>` instead, on both routes it took to get
+there.
+
+Nothing else changed. Successful lookups, offline runs, and every output file
+are identical to v2.2.0.
+
+
 ## [v2.2.0] - 2026-09-09
 ### ⚠️ The way you call the script has changed
 

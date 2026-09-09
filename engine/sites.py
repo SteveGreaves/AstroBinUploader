@@ -130,6 +130,29 @@ def is_valid_api_endpoint(api_endpoint: Any) -> bool:
     return isinstance(api_endpoint, str) and bool(api_endpoint.strip())
 
 
+def redact_api_key(text: str, api_key: Any) -> str:
+    """Removes the API key from a message before it is logged or returned.
+
+    ``requests`` embeds the full request URL - query string included - in its
+    exception messages, so an ordinary 404, timeout or DNS failure would
+    otherwise write the user's key in plaintext into ``AstroBinUploader.log``,
+    which is the file a user is most likely to attach to a bug report. The key
+    is validated as alphanumeric (:func:`is_valid_api_key`), so it is never
+    percent-encoded in a URL and a literal replacement is exact.
+
+    Args:
+        text (str): Message that may contain the key.
+        api_key (Any): The key to remove. Ignored when not a non-empty string.
+
+    Returns:
+        str: ``text`` with every occurrence of the key replaced by
+            ``<redacted>``.
+    """
+    if isinstance(api_key, str) and api_key:
+        return text.replace(api_key, '<redacted>')
+    return text
+
+
 def get_bortle_sqm(
     lat: float,
     lon: float,
@@ -203,8 +226,13 @@ def get_bortle_sqm(
         # Deliberately broad, and it always was: a failed sky-quality lookup
         # must degrade to the configured defaults, never abort a run that has
         # already read thousands of frames.
-        logger.error(f"Sky quality lookup failed: {e}")
-        return 0, 0, f"Request Error: {e}", api_valid, api_endpoint_valid
+        #
+        # Redacted before it is logged *or* returned: the returned string is
+        # logged again by SiteLookup.resolve as "API error: ...", so both
+        # paths out of here would otherwise carry the key.
+        message = redact_api_key(str(e), api_key)
+        logger.error(f"Sky quality lookup failed: {message}")
+        return 0, 0, f"Request Error: {message}", api_valid, api_endpoint_valid
 
 
 def reverse_geocode(
