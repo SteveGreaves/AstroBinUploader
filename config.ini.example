@@ -1,6 +1,9 @@
 [defaults]
+        # Values used when a header is missing, or when a frame in a batch
+        # leaves the field blank. Edit these to match your own equipment and
+        # site before the first real run.
         IMAGETYP = LIGHT
-        EXPOSURE = 0
+        EXPOSURE = 0.0
         DATE-OBS = 2023-01-01
         XBINNING = 1
         GAIN = -1
@@ -11,28 +14,34 @@
         FWHEEL = None
         ROTNAME = None
         ROTANTANG = 0
-        XPIXSZ = 3
+        XPIXSZ = 3.76
         CCD-TEMP = -10
-        FOCALLEN = 540
-        FOCRATIO = 5
-        SITE = My Site Name
-        SITELAT = 0.0000
-        SITELONG = 0.0000
+        FOCALLEN = 500
+        FOCRATIO = 5.0
+        SITE = Unknown Site
+        SITELAT = 0.0
+        SITELONG = 0.0
         BORTLE = 4
-        SQM = 21
+        SQM = 21.0
         FILTER = No Filter
         OBJECT = No target
         FOCTEMP = 20
-        HFR = 1
-        FWHM = 0
+        HFR = 1.6
         SWCREATE = Unknown package
-        USEOBSDATE = False
+        # True: aggregate by the calendar date of each frame.
+        # False: frames taken after midnight are counted with the session
+        # that started the evening before.
+        USEOBSDATE = True
 [override]
-        SWCREATE = CREATOR
-        EXPOSURE = EXPTIME
+        # Read a non-standard header keyword as a standard one:
+        #   STANDARD = YOUR_KEYWORD
+        # A comma-separated list tries each keyword in turn.
         SITE = SITENAME
+        EXPOSURE = EXPTIME
+        INSTRUME = CAMERA_MODEL
         FOCNAME = FOCUSER
-        SQM = AOCSKYQ, AOCSKYQU
+        SWCREATE = CREATOR
+        SQM = "AOCSKYQ, AOCSKYQU"
         FOCTEMP = AOCAMBT
 [equipmentoverrides]
         # Force a display value for equipment fields when the header
@@ -44,6 +53,16 @@
         FWHEEL = None
         ROTNAME = None
 [filters]
+        # These are the author's own filters -- Astronomik 2 inch round
+        # filters, named as N.I.N.A. writes them -- paired with AstroBin's
+        # numeric filter IDs. They are a starting point, not a standard:
+        # AstroBin's ID identifies a specific filter product, so the same name
+        # in a different brand, size or mounting has a different ID.
+        #
+        # Replace these with your own filters. The names on the left must match
+        # what your capture software writes into the FITS header; the codes on
+        # the right are looked up on AstroBin -- see "Finding AstroBin's Numeric
+        # ID for Filters" in the README.
         #Filter     code
         Ha = 4663
         SII = 4844
@@ -52,25 +71,30 @@
         Green = 4643
         Blue = 4637
         Lum = 2906
-        CLS = 4632
 [secret]
-        # OPTIONAL. Delete this whole section to keep the program entirely
-        # offline -- it then takes the site name from [defaults] SITE and the
-        # sky quality from [defaults] BORTLE/SQM, and contacts nothing.
+        # Holds the sky quality API key and endpoint, and your e-mail address.
+        # Only the API key is to be edited.
         #
-        # With it, a coordinate that [sites] does not already know is resolved
-        # once: the address comes from OpenStreetMap's Nominatim service, and
-        # the Bortle/SQM from lightpollutionmap.info's World Atlas 2015 layer.
+        # A coordinate that [sites] does not already know is resolved once: the
+        # address comes from OpenStreetMap's Nominatim service, and the Bortle
+        # and SQM values from lightpollutionmap.info's World Atlas 2015 layer.
         # The result is written back into [sites] below, so it is never looked
-        # up twice. Any failure falls back to the [defaults] values.
+        # up twice.
         #
-        # EMAIL_ADDRESS is required by Nominatim's terms of service as a
-        # contact for the request; it is sent in the user agent and nowhere
-        # else. Get a free API key from https://www.lightpollutionmap.info.
+        # If there is no valid API key, Bortle and SQM are taken from
+        # [defaults] BORTLE and [defaults] SQM. If the address request fails,
+        # the site information is taken from [defaults] SITE, SITELAT and
+        # SITELONG. The e-mail address is sent to the geocoding provider as a
+        # courtesy so they can see who is using their API.
+        #
+        # The API key is obtained by e-mailing the owner of
+        # lightpollutionmap.info -- see the README.
         #API key         API endpoint
         YOUR_API_KEY = https://www.lightpollutionmap.info/QueryRaster/
         EMAIL_ADDRESS = your_email@example.com
 [sites]
+        # Written by the program as sites are resolved. A generated config
+        # starts with this section empty; the block below shows the shape.
         [["My Full Site Address, Country, Postcode"]]
                 latitude = 0.0000
                 longitude = 0.0000
