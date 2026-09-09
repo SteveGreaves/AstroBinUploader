@@ -32,6 +32,130 @@ Restores a capability the v2.0.0 rewrite dropped without recording it.
 - **The `[secret]` configuration section**, and `geopy`/`requests` as
   *optional* dependencies.
 
+### Changed — a generated `config.ini` now explains itself
+`_generate_default_config` wrote no comments at all, so the file a new user is
+told to edit was a bare list of keys. Every section now carries a short comment
+saying what it is for: what `[defaults]` values are used for and what
+`USEOBSDATE` decides, the `STANDARD = YOUR_KEYWORD` form of `[override]`, what
+`[equipmentoverrides]` is for, which `[secret]` field to edit and what happens
+until it is, and that `[sites]` is written by the program. Keys and values are
+unchanged, and the generated file still parses identically to
+`config.ini.example`.
+
+Comments are attached after every section has been created: `ConfigObj` indexes
+`inline_comments` by section as each is added, so setting a comment for a section
+that does not exist yet makes `write()` fail with a `KeyError` on that name.
+
+### Changed — the default filter codes are identified as one person's filters
+The `[filters]` defaults are the author's own **Astronomik 2 inch round filters**,
+named as N.I.N.A. writes them. An AstroBin filter ID identifies a specific
+product, so the same filter name in a different brand, size or mounting has a
+different ID — a user who keeps the defaults silently uploads someone else's
+filters. Only the README's "Astrobin Filter-Code mappings" section said so, which
+is the furthest point from where the values are actually edited. Now stated in the
+generated `config.ini`, in `config.ini.example`, and in the README's `[filters]`
+walkthrough.
+
+### Fixed — `config.ini.example` matched neither the code nor the documentation
+The shipped example config had drifted from what the program actually generates:
+`USEOBSDATE` was `False` where the code default and the README both say `True`,
+a `FWHM` key was listed that is never read (FWHM is derived as `HFR * 2`), and
+several sample values disagreed with the generated defaults. It also still
+described `[secret]` as "OPTIONAL — delete this whole section", the framing
+corrected in v2.2.0's own documentation pass, which had updated `README.md` but
+not this file. `[secret]` is a standard section; the fallbacks depend on whether
+the API key is valid, not on whether the section is present.
+
+Rebuilt from the generated output with the explanatory comments retained, and
+verified by loading both files through `ConfigLoader` and comparing the parsed
+configuration.
+
+### Restored — `--test` finds the file where it is documented to
+`--test` is how a support request is reproduced: the user sends the
+`debug_step_00_RawHeaders.csv` their `--debug` run produced, and the pipeline is
+replayed from it without needing their FITS data.
+
+v1.4.x resolved the argument as `os.path.join(output_dir, args.test)`, i.e.
+relative to the run's `AstroBinUploadInfo` directory — which is exactly where
+`--debug` writes that file, so the bare filename was enough. The v2.0.0 rewrite
+replaced this with a plain `pd.read_csv(csv_path)`, resolving against the current
+directory instead, and the documented form stopped working. The regression stayed
+invisible because `golden_tests/run_golden.py` passes an absolute path, so the
+harness never exercised it.
+
+Both forms now work, tried in order: the run's `AstroBinUploadInfo` directory
+first, then the path exactly as given. An absolute path satisfies both. This
+restores the documented behaviour without breaking the form that v2.0.0–v2.1.3
+accepted — which is the one that matters for a CSV received from someone else. If
+the file is in neither location, the error names both paths tried.
+
+Also fixed: `--help` described the CSV as needing to "reside in the first
+directory path provided", which was never true of the v2.x code.
+
+### Restored — running with no arguments creates config.ini
+The README has always documented that calling the script with no arguments
+generates a default `config.ini` and exits, giving a new user something to edit.
+That has not worked for about two years:
+
+- **v1.3.10 and earlier** guarded it as
+  `if len(sys.argv) < 2 and os.path.isfile(CONFIGFILENAME)`, deliberately
+  letting a first run with no arguments fall through to config generation — but
+  `output_dir = sys.argv[1]` sat between that guard and the generation code, so
+  it raised `IndexError` before reaching it.
+- **V1.3.12** commented out the `os.path.isfile` term, fixing the crash by
+  removing the feature.
+- **v1.4.5** moved to `argparse` with `nargs='+'`, making a directory path
+  structurally mandatory. From then until v2.1.3 a bare call produced only
+  `error: the following arguments are required: directory_paths`, which is what
+  a new user met as their very first interaction with the program.
+
+`directory_paths` is now `nargs='*'`, with the first-run branch running before
+any path-dependent setup — so the crash is fixed rather than reintroduced. With
+no paths and no `config.ini`, the file is generated and the program exits. With
+no paths and a `config.ini` already present, it reports that a directory is
+needed and exits — the case V1.3.12 was actually concerned with, now handled
+explicitly. A named `--config` profile that does not exist is an error, never a
+request to create one.
+
+Also fixed: `--help` reported the version as a hardcoded "v2.1.1" regardless of
+the actual version, and its examples have been updated to the new call form.
+
+### Changed — how you call the script
+The utility is now installed into, and run from, a **virtual environment created
+inside the project directory**. The documented command changes from
+
+    python3 AstroBinUpload.py [directory_paths]
+
+to
+
+    .venv/bin/python3 AstroBinUpload.py [directory_paths]
+
+(Windows: `.venv\Scripts\python AstroBinUpload.py`). There is no activation
+step — naming that interpreter is enough, from any directory or terminal.
+
+**Nothing in the program changed.** This is purely how it is installed and
+invoked. Two reasons for the move:
+
+- On Python 3.11 and later, Debian, Ubuntu, Fedora and Homebrew refuse a plain
+  `pip install -r requirements.txt` into the system interpreter with
+  `error: externally-managed-environment`. The previously documented
+  installation therefore fails outright on a current machine.
+- `requirements.txt` pins exact versions (`astropy==6.1.3`, `pandas==2.2.3`,
+  `numpy==2.1.1`, `configobj==5.0.8`). Installed system-wide those pins can
+  downgrade packages other software depends on; inside a virtual environment
+  they cannot reach anything else.
+
+Choosing between installed Python versions is unaffected, and is now recorded
+rather than left to chance: create the environment with the interpreter you want
+(`python3.11 -m venv .venv`) and `.venv/bin/python3` is permanently that version.
+The documented minimum is now **Python 3.10**, which is what `astropy 6.1.3` and
+`numpy 2.1.1` require — the README previously said only "Python 3.x".
+
+**Existing installations are unaffected** — if the libraries are already
+installed, `python3 AstroBinUpload.py` keeps working exactly as before. The
+virtual environment is required for new installations, and recommended when
+upgrading, particularly if the pinned library versions change.
+
 ### Behaviour when not configured
 Unchanged, deliberately, and this is the part that is tested hardest: with no
 `[secret]` section the program makes **no network calls at all**, imports
