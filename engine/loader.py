@@ -157,6 +157,16 @@ class ConfigLoader:
             'Blue': 4637,
             'Lum': 2906
         }
+        # Generated with placeholders, exactly as v1.4.x's get_default_ini_string
+        # did: the section is part of a standard configuration, not an extra.
+        # Until the user substitutes real credentials the lookups in
+        # engine/sites.py cannot run and the [defaults] values are used, so a
+        # freshly generated config still works -- it just cannot name a site it
+        # has never seen. Restored in v2.2.0 along with the lookups themselves.
+        config[ConfigSections.SECRET] = {
+            'YOUR_API_KEY': 'https://www.lightpollutionmap.info/QueryRaster/',
+            'EMAIL_ADDRESS': 'your_email@example.com',
+        }
         config[ConfigSections.SITES] = {}
         config.write()
 
