@@ -179,6 +179,15 @@ SESSION.md
 SESSION.old.md
 REMEDIATION_PLAN.md
 RUST_PORT.md
+future_work.md
+
+# Personal configuration backups. config.ini is already ignored above, but a
+# copy under any other name is not -- and these hold a live API key and the
+# observer's own coordinates. Untracked is not protection: one `git add -A`
+# would stage them for a public remote.
+config_back*.ini
+config.ini.bak
+config.ini.backup
 
 # golden_tests/ IS tracked (see REMEDIATION_PLAN.md P0): it holds the
 # committed fixture corpus and reference outputs that make regression
