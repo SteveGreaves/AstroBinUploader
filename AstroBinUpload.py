@@ -223,6 +223,19 @@ def main():
     if invalid_paths:
         for p in invalid_paths:
             print(f"[ERROR] Not a directory: {p}")
+            # A Windows .lnk is a shell shortcut: an ordinary small file that
+            # only Explorer resolves, so os.path.isdir() is False for it on
+            # every platform -- correctly, since the filesystem has no link
+            # there to follow. Only a real directory link (mklink /J or /D)
+            # is one. Without this line the rejection is a dead end; with it,
+            # it is a one-line fix.
+            if p.lower().endswith('.lnk'):
+                print(
+                    "        A Windows shortcut (.lnk) is a file, not a folder. "
+                    "Create a real directory\n"
+                    "        link with  mklink /J \"link-name\" \"target-folder\", "
+                    "or pass the folder itself."
+                )
         print(
             "\nOne or more input paths do not exist or are not directories. "
             "Check for typos before re-running."

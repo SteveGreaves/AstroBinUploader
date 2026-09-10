@@ -128,6 +128,35 @@ class NormalizeHeadersStep:
             logger.debug("Merging duplicate columns")
             df = _coalesce_duplicate_columns(df)
 
+        # --- Stage 2b: Standard-keyword fallback for exposure ---
+        # EXPTIME is the FITS standard keyword for integration time; EXPOSURE
+        # is the widespread non-standard sibling. N.I.N.A. writes both, so raw
+        # lights carry either. PixInsight's integrated masters carry EXPTIME
+        # only, which left `exposure` empty for every master; Stage 7 then
+        # hardened those gaps to 0.0 and the session summary reported every
+        # master calibration total as 0 hrs 0 mins.
+        #
+        # Fill gaps only: a frame supplying a real EXPOSURE keeps it, so this
+        # can never override found data. It runs before Stage 3 so that a
+        # header value always outranks a [defaults] value.
+        #
+        # Note [override] EXPOSURE = EXPTIME, shipped in the generated config,
+        # is a *replacement* rather than a fallback -- Stage 1 drops the
+        # exptime column outright -- so this is a no-op whenever that line is
+        # present, and only rescues configs written before it existed.
+        if 'exptime' in df.columns:
+            if 'exposure' not in df.columns:
+                logger.debug("Exposure fallback: no EXPOSURE column, using EXPTIME")
+                df['exposure'] = df['exptime']
+            else:
+                gaps = df['exposure'].isna() & df['exptime'].notna()
+                if gaps.any():
+                    logger.debug(
+                        f"Exposure fallback: filling {int(gaps.sum())} missing "
+                        f"EXPOSURE value(s) from EXPTIME"
+                    )
+                    df['exposure'] = df['exposure'].fillna(df['exptime'])
+
         # --- Stage 3: Default Injection ---
         # For any core metadata still missing after extraction, overrides,
         # and case normalization, inject the user-defined fallback values.
@@ -233,11 +262,35 @@ class NormalizeHeadersStep:
             This is the same defaulting question Stage 3 already answers for
             a wholly-missing column, so it is resolved the same way: prefer
             config.defaults, and only fall back to the hardcoded literal when
-            the config file does not define that key at all (as most of the
-            table below does not -- BORTLE/SQM/FOCTEMP/CCD-TEMP/FOCRATIO/
-            EXPOSURE/XBINNING all already agree with their config default and
-            are left as plain literals; IMSCALE/NUMBER/darks/flats/flatDarks/
-            bias have no config key to look up).
+            the config file does not define that key at all.
+
+            Which entries below need this, and which must NOT have it:
+
+            * Config-driven here -- every key whose default is applied
+              per-cell, via the fillna() branches further down: GAIN, EGAIN,
+              EXPOSURE, CCD-TEMP, FOCALLEN, FOCRATIO, XPIXSZ, SITELAT,
+              SITELONG, XBINNING, OBJECT. A blank in one of these reverts to
+              the literal unless it is looked up, which is the whole defect.
+
+              EXPOSURE was the last one missing, and it was reported from the
+              field: PixInsight masters carry EXPTIME but no EXPOSURE, so
+              every master's exposure blanked to 0.0 and the session summary
+              showed all master calibration totals as 0 hrs 0 mins, whatever
+              [defaults] EXPOSURE said. Stage 2b now supplies EXPTIME first;
+              this makes the configured value the next resort after it.
+
+            * Deliberately left as plain literals -- SITE, BORTLE and SQM are
+              consumed from config.defaults by GeocodeStep and sites.py, and
+              HFR by OpticalParameterStep. Reading them here as well would
+              give one key two consumption points at two different layers,
+              which is the bug class 1fdfbd2 fixed. The literal is an inert
+              floor for those; the live lookup belongs to the owning step.
+
+            * No config key at all -- FILTER and FOCTEMP are only ever used
+              for a wholly-missing column, which Stage 3 has already filled
+              from config by the time this runs, so a lookup here would be
+              unreachable. FWHM/IMSCALE/NUMBER/darks/flats/flatDarks/bias
+              have no [defaults] key to look up.
             """
             raw = config.defaults.get(raw_key)
             if raw is None:
@@ -250,10 +303,10 @@ class NormalizeHeadersStep:
         core_columns = {
             InternalColumns.GAIN: _configured_default('GAIN', 0, int),
             InternalColumns.EGAIN: _configured_default('EGAIN', 1.0),
-            InternalColumns.DURATION: 0.0,
-            InternalColumns.SENSOR_COOLING: -10.0,
+            InternalColumns.DURATION: _configured_default('EXPOSURE', 0.0),
+            InternalColumns.SENSOR_COOLING: _configured_default('CCD-TEMP', -10.0),
             InternalColumns.FOCAL_LENGTH: _configured_default('FOCALLEN', 500),
-            InternalColumns.F_NUMBER: 5.0,
+            InternalColumns.F_NUMBER: _configured_default('FOCRATIO', 5.0),
             InternalColumns.PIXEL_SIZE: _configured_default('XPIXSZ', 3.76),
             InternalColumns.SITE_LAT: _configured_default('SITELAT', 0.0),
             InternalColumns.SITE_LONG: _configured_default('SITELONG', 0.0),
@@ -263,7 +316,7 @@ class NormalizeHeadersStep:
             InternalColumns.TARGET: _configured_default('OBJECT', 'Unknown', str),
             InternalColumns.FILTER_NAME: 'No Filter',
             InternalColumns.SITE_NAME: 'Unknown Site',
-            InternalColumns.BINNING: 1,
+            InternalColumns.BINNING: _configured_default('XBINNING', 1, int),
             InternalColumns.HFR: 1.0,
             InternalColumns.MEAN_FWHM: 0.0,
             InternalColumns.IMSCALE: 1.0,

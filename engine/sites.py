@@ -319,6 +319,23 @@ class SiteLookup:
             elif is_valid_api_key(str(k).strip()):
                 self.api_key = str(k).strip()
                 self.api_endpoint = str(v).strip()
+            elif str(k).strip().upper() != 'YOUR_API_KEY':
+                # This section is the one place where a *key name* is data, so
+                # the natural edit -- replace the thing on the left -- is right
+                # for the API key and wrong for the address. Putting the
+                # address on the left, `me@example.com = your_email@example.com`,
+                # matches neither branch above and is dropped in silence: the
+                # run then completes with no reverse geocoding and no warning,
+                # and the site falls back to [defaults] SITE. [override] has
+                # named unrecognised targets since A6; this section needed it
+                # more. The shipped `YOUR_API_KEY` placeholder is excluded so a
+                # pristine config does not cry wolf on every first run.
+                self.logger.warning(
+                    f"[secret] entry '{k}' is neither EMAIL_ADDRESS nor a valid "
+                    f"16-character API key, so it will be ignored. The API key is "
+                    f"the name on the left of the '='; your e-mail address is the "
+                    f"value on the right of EMAIL_ADDRESS."
+                )
 
         self.enabled = bool(self.email or self.api_key)
         if not self.enabled and secret:

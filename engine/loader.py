@@ -28,6 +28,26 @@ _KNOWN_OVERRIDE_TARGETS = {
     if not k.startswith('_') and isinstance(v, str)
 }
 
+
+def _redacted_section(section: Any) -> Dict[str, Any]:
+    """One config section as a plain dict, with any API key replaced.
+
+    In `[secret]` the sky-quality API key is the *name* on the left of the
+    `=`, not the value on the right, so redaction has to replace the key --
+    `redact_api_key` in sites.py solves the opposite direction (a key quoted
+    inside a message) and does not fit here. Sub-sections, which is how
+    `[sites]` stores each site, are rendered recursively.
+    """
+    from engine.sites import is_valid_api_key
+
+    # Sorted, not file order: the port's config sections are a BTreeMap,
+    # and a diagnostic dump is easier to scan when the order is fixed.
+    out: Dict[str, Any] = {}
+    for k, v in sorted(section.items(), key=lambda kv: str(kv[0])):
+        name = '<redacted>' if is_valid_api_key(str(k).strip()) else k
+        out[name] = _redacted_section(v) if hasattr(v, 'items') else v
+    return out
+
 class ConfigLoader:
     """
     Manages the loading and type-mapping of application configuration.
@@ -79,7 +99,18 @@ class ConfigLoader:
         use_obs_date = str(defaults_sec.get('USEOBSDATE', 'True')).lower() == 'true'
         
         self.logger.info(f"Configuration loaded and normalized from {filepath}")
-        
+
+        # What the program actually read is the single most useful thing to
+        # have when a run does something unexpected, and the log is what gets
+        # attached to a report. One record per section, at DEBUG, so an
+        # ordinary run's log is unchanged. The API key is redacted -- see
+        # _redacted_section, and note v2.2.1 exists to keep that credential
+        # out of this file.
+        for _name in sorted(normalized):
+            self.logger.debug(
+                f"Config [{_name}]: {_redacted_section(normalized[_name])!r}"
+            )
+
         return AppConfig(
             defaults=self._normalize_defaults(defaults_sec),
             overrides=self._normalize_overrides(normalized.get(ConfigSections.OVERRIDE, {})),
