@@ -221,9 +221,9 @@ same filters. Replace them with your own: see
 
 ### **[secret]**
 The secret section holds:
-1. The sky quality API keys and API endpoint required by the script to be able to obtain values of Bortle and SQM for the site location. Only the API key is to be edited. If there is no valid API key the values of Bortle and SQM are taken from [defaults][BORTLE] and [defaults][SQM] in the config.ini file
+1. The sky quality API keys and API endpoint required by the script to be able to obtain values of Bortle and SQM for the site location. Replace `YOUR_API_KEY` — the name on the **left** of the `=` — with the key itself, and leave the endpoint on the right alone. If there is no valid API key the values of Bortle and SQM are taken from [defaults][BORTLE] and [defaults][SQM] in the config.ini file
 
-2. User email address. This is used as part of an information string sent to the reverse geocoding API, which is used to recover the site address. Unique site latitude and longitude values extracted from the headers are passed to the API to generate the site address. Your email address is passed to the API as courtesy, so the provider can see who is using their API. If the API request fails the site location information is taken from [defaults][SITE], [defaults][SITELAT] and [defaults][SITELONG] in the config.ini file.
+2. User email address. Here the key name `EMAIL_ADDRESS` stays as it is, and your address replaces `your_email@example.com` — the value on the **right** of the `=`. This is used as part of an information string sent to the reverse geocoding API, which is used to recover the site address. Unique site latitude and longitude values extracted from the headers are passed to the API to generate the site address. Your email address is passed to the API as courtesy, so the provider can see who is using their API. If the API request fails the site location information is taken from [defaults][SITE], [defaults][SITELAT] and [defaults][SITELONG] in the config.ini file.
 
 ```
 [secret]
@@ -231,6 +231,16 @@ The secret section holds:
         YOUR_API_KEY = https://www.lightpollutionmap.info/QueryRaster/
         EMAIL_ADDRESS = your_email@example.com
 ```
+
+> **The two lines are edited on opposite sides**, which is easy to get wrong.
+> This section is the one place in config.ini where a key *name* carries data:
+> the API key is the name on the left, so that line is edited on the left.
+> `EMAIL_ADDRESS` is an ordinary setting name, so that line is edited on the
+> right. Writing `you@example.com = your_email@example.com` matches neither
+> `EMAIL_ADDRESS` nor the 16-character key shape, so it is ignored: the run
+> still completes, but with no reverse geocoding, and the site name falls back
+> to `[defaults] SITE`. Since v2.2.2 an entry in this section that is neither
+> of those is reported in AstroBinUploader.log.
 
 ### **[sites]**
 The [sites] section holds historic site information found by the script. When a script is run it first looks here to collect site information. Only if a site found in the headers does not exist does it access the external API's. The script automatically updates this section if a new site is found. The user does not usually have to edit this section, but remote site information can be added here if the script cannot access the API.
