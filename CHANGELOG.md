@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.2.2] - 2026-09-10
+Fixes for three things found running the utility against real data, and a
+diagnostic that would have shortened finding them.
+
+### Fixed
+- **PixInsight master calibration frames.** Integrated masters carry the
+  FITS-standard `EXPTIME` keyword and no `EXPOSURE`. The utility only read
+  `EXPOSURE`, so every master total in the session summary read `0 hrs 0
+  mins`. Exposure is now resolved as `EXPOSURE → EXPTIME → [defaults]
+  EXPOSURE`, filling gaps only, so a frame that already has an exposure is
+  never overridden. Related: `[defaults] EXPOSURE` was never actually
+  applied — the default was only injected when the whole column was
+  missing, which never happens in a directory holding both lights and
+  masters. It is honoured now.
+- **`[secret]` e-mail address entered on the wrong side.** The API key is
+  the name on the **left** of the `=`; `EMAIL_ADDRESS` is the opposite,
+  with your address on the **right**. Getting it backwards meant the entry
+  matched nothing and was silently ignored — the run completed, but with
+  no reverse geocoding, and the site name fell back to `[defaults] SITE`.
+  Now reported in the log, and the documentation says which side each line
+  is edited on.
+- **Windows shortcuts (`.lnk`) gave only "Not a directory".** A shortcut is
+  a small file only File Explorer knows how to follow, so the utility
+  correctly sees a file rather than a folder — but it now says so, and
+  points at `mklink /J`, which makes a real directory link and needs no
+  administrator rights.
+
+### Added
+- **The log remembers the configuration again.** Run with `--debug` and
+  `AstroBinUploader.log` now records every section of `config.ini` as it
+  was read, with the API key redacted.
+
 ## [2.2.1] - 2026-09-09
 A security fix for the sky-quality lookup restored in 2.2.0.
 

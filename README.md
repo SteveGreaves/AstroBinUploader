@@ -1,4 +1,4 @@
-# AstroBin Upload Utility v2.2.0
+# AstroBin Upload Utility v2.2.2
 Scripts to process FITS/XISF headers and create Astrobin data acquisition file and summary text.
 
 Usage:
